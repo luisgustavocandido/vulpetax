@@ -1,6 +1,3 @@
 {
-  "cron": [
-    { "path": "/api/sync/tax-form", "schedule": "*/15 * * * *" },
-    { "path": "/api/sync/posvenda-llc", "schedule": "*/15 * * * *" }
-  ]
+  
 }
