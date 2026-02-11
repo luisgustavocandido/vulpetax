@@ -73,34 +73,42 @@ npm run db:migrate
 
 ---
 
-## 5. Configurar Cron
+## 5. Configurar Cron (externo)
 
-O `vercel.json` já define os crons:
+O projeto **não** usa `vercel.json` para crons (a propriedade `cron` exige plano específico e pode causar erro de deploy). Use um **cron externo** para chamar os endpoints de sync periodicamente.
 
-```json
-{
-  "cron": [
-    { "path": "/api/sync/tax-form", "schedule": "*/15 * * * *" },
-    { "path": "/api/sync/posvenda-llc", "schedule": "*/15 * * * *" }
-  ]
-}
-```
+### Serviços sugeridos
 
-### Autenticação do Cron
+- [cron-job.org](https://cron-job.org) (grátis)
+- [Upstash QStash](https://upstash.com/qstash)
+- GitHub Actions (schedule)
+- Qualquer outro serviço que faça HTTP POST em intervalo
 
-O Vercel Cron envia requisições HTTP. O app aceita:
+### Configuração
 
-- **`x-cron-secret`:** valor igual a `CRON_SECRET` (testes locais)
-- **`Authorization: Bearer <CRON_SECRET>`** (recomendado para Vercel)
+Para cada sync, configure:
 
-O Vercel Cron padrão **não** envia headers customizados automaticamente. Para enviar `Authorization: Bearer`:
+| Endpoint | URL | Schedule sugerido |
+|----------|-----|-------------------|
+| TAX Form | `https://seu-app.vercel.app/api/sync/tax-form` | `*/15 * * * *` (a cada 15 min) |
+| Pós-Venda | `https://seu-app.vercel.app/api/sync/posvenda-llc` | `*/15 * * * *` (a cada 15 min) |
 
-1. Use **Vercel Cron Jobs** (plano Pro) que permite configurar headers, ou
-2. Use um serviço externo (cron-job.org, Upstash QStash, etc.) configurando:
-   - URL: `https://seu-app.vercel.app/api/sync/tax-form`
-   - Header: `Authorization: Bearer <CRON_SECRET>`
+**Método:** POST
 
-Para testes locais:
+**Headers obrigatórios** (um dos dois):
+
+- `x-cron-secret: SEU_CRON_SECRET`
+- `Authorization: Bearer SEU_CRON_SECRET`
+
+### Exemplo (cron-job.org)
+
+1. Crie uma conta em cron-job.org
+2. New Cronjob → URL: `https://seu-app.vercel.app/api/sync/tax-form`
+3. Request Method: POST
+4. Request Headers: `x-cron-secret: [valor do CRON_SECRET]`
+5. Schedule: a cada 15 minutos
+
+### Teste local
 
 ```bash
 curl -X POST "http://localhost:3000/api/sync/tax-form" \
@@ -128,7 +136,7 @@ postgresql://...?sslmode=require
 - [ ] Páginas protegidas (`/clients`, `/dashboard`, `/tax`) exigem login
 - [ ] Headers de segurança presentes (`curl -I` em qualquer rota)
 - [ ] Sync manual (prévia + confirm) em `/tax` e `/clients` funcionam
-- [ ] Cron executando (ver logs na Vercel ou em `/api/health`)
+- [ ] Cron externo configurado e executando (teste manual com curl)
 - [ ] `DATABASE_URL` aponta para Postgres remoto (não localhost)
 - [ ] Variáveis sensíveis (`CRON_SECRET`, `PASSCODE`) configuradas na Vercel
 

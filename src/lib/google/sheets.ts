@@ -71,7 +71,7 @@ export async function getSheetRows(config?: SheetConfig): Promise<SheetRowsResul
   });
 
   const sheetsList = spreadsheet.data.sheets ?? [];
-  let targetSheet: { properties?: { sheetId?: number; title?: string } } | undefined;
+  let targetSheet: (typeof sheetsList)[number] | undefined;
 
   if (sheetIdStr) {
     const gid = parseInt(sheetIdStr, 10);

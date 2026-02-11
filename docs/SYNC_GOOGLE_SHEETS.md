@@ -55,27 +55,15 @@ curl -X POST "https://seu-dominio.com/api/sync/tax-form" \
 
 ## 5. Cron automático
 
-### Vercel
+### Vercel e outros ambientes
 
-O `vercel.json` está configurado para rodar a cada 15 minutos:
-
-```json
-{
-  "cron": [
-    { "path": "/api/sync/tax-form", "schedule": "*/15 * * * *" }
-  ]
-}
-```
-
-Configure `CRON_SECRET` nas variáveis de ambiente do projeto Vercel. O Vercel Cron envia a requisição; use um middleware ou Workflow para passar o secret (ou configure o endpoint para aceitar o `?secret=` na URL).
-
-### Outros ambientes
-
-Use cron do sistema ou um serviço externo (cron-job.org, etc.):
+O projeto **não** usa `vercel.json` para crons. Use cron externo (cron-job.org, Upstash QStash, GitHub Actions, etc.) ou cron do sistema:
 
 ```bash
 */15 * * * * curl -X POST "https://seu-dominio.com/api/sync/tax-form" -H "x-cron-secret: $CRON_SECRET"
 ```
+
+Configure `CRON_SECRET` nas variáveis de ambiente. O endpoint aceita `x-cron-secret` ou `Authorization: Bearer`. Veja `docs/DEPLOY_VERCEL.md` para detalhes.
 
 ## 6. Mapeamento de colunas
 
