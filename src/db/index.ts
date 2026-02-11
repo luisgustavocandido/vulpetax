@@ -1,9 +1,13 @@
-import Database from "better-sqlite3";
-import { drizzle } from "drizzle-orm/better-sqlite3";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { config } from "dotenv";
 import * as schema from "./schema";
 
-const sqlite = new Database(process.env.DATABASE_PATH ?? "./vulpetax.db");
-sqlite.pragma("foreign_keys = ON");
-export const db = drizzle(sqlite, { schema });
+config({ path: ".env.local" });
+config({ path: ".env" });
 
-export * from "./schema";
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  throw new Error("DATABASE_URL não definida. Configure em .env ou .env.local");
+}
+
+export const db = drizzle(connectionString, { schema });

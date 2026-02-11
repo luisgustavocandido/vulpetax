@@ -1,66 +1,98 @@
-# VulpeTax
+# Vulpeinc — Sistema de Gestão de Clientes (MVP-1)
 
-Automação de coleta de dados e gestão de declarações fiscais (Form 5472 + pro forma Form 1120) para LLCs dos EUA de não residentes. Projeto Vulpeinc.
+Next.js 14 + Drizzle ORM + PostgreSQL. Especificação em `docs/ESPECIFICACAO_MVP_CLIENTES.md`.
 
-**Uso atual:** ferramenta de **controle interno** apenas (equipe Vulpeinc). Não é produto público nem portal do cliente.
+## Pré-requisitos
 
-## Stack
+- Node.js 18+
+- Docker (para Postgres local)
 
-- **Next.js 16** (App Router) + TypeScript
-- **Tailwind CSS**
-- **Drizzle ORM** + SQLite (arquivo local `vulpetax.db`)
+> **Deploy na Vercel:** a Vercel exige Postgres remoto (Neon, Supabase). Veja `docs/DEPLOY_VERCEL.md`.
 
-## Desenvolvimento
+## Rodar localmente
+
+### 1. Instalar dependências
 
 ```bash
-# Instalar dependências
 npm install
+```
 
-# Criar/atualizar tabelas no banco
-npm run db:push
+### 2. Configurar ambiente
 
-# Rodar em desenvolvimento
+```bash
+cp .env.example .env
+```
+
+Edite `.env` se necessário (credenciais padrão já funcionam com o Docker).
+
+### 3. Subir Postgres
+
+```bash
+docker compose up -d
+```
+
+> **Porta 5432 em uso?** Edite `docker-compose.yml` e mapeie para outra porta, ex: `"5433:5432"`. Ajuste `DATABASE_URL` no `.env` para `localhost:5433`. Para produção na Vercel, use Postgres remoto.
+
+### 4. Aplicar migrações
+
+```bash
+npm run db:migrate
+```
+
+### 5. Seed (usuários iniciais)
+
+```bash
+npm run db:seed
+```
+
+Cria:
+- **Admin:** `admin@vulpeinc.com` / `admin123`
+- **User:** `user@vulpeinc.com` / `user123`
+
+### 6. Rodar a aplicação
+
+```bash
 npm run dev
 ```
 
 Acesse [http://localhost:3000](http://localhost:3000).
 
-**Controle interno:** em [/login](http://localhost:3000/login) escolha um usuário (criado pelo seed) para que as ações sejam registradas no [audit log](/audit).
-
-### Seed (dados de teste)
-
-Em desenvolvimento, você pode popular o banco com um cliente, LLC e declaração de exemplo:
-
-```bash
-curl -X POST http://localhost:3000/seed
-```
-
-## Fluxo da aplicação
-
-1. **Clientes** — Cadastro do titular (não residente): nome, e-mail, país, CPF/TIN, etc.
-2. **LLCs** — Por cliente: nome da LLC, EIN, estado (WY, DE, NM, FL, TX), data de formação, endereço.
-3. **Declarações** — Por LLC, por ano fiscal: status (rascunho / pronto / enviado), prazos federal e estadual.
-4. **Transações reportáveis (Form 5472)** — Por declaração: tipo (contribuição, distribuição, empréstimo, pagamento por serviços, etc.) e valor em USD.
-
 ## Scripts
 
-| Comando        | Descrição                    |
-|----------------|------------------------------|
-| `npm run dev`  | Servidor de desenvolvimento  |
-| `npm run build`| Build de produção            |
-| `npm run start`| Servidor de produção         |
-| `npm run db:push`   | Sincroniza schema com o SQLite |
-| `npm run db:generate` | Gera migrations (Drizzle)  |
-| `npm run db:studio`  | Abre Drizzle Studio (UI do banco) |
+| Comando         | Descrição                          |
+|-----------------|------------------------------------|
+| `npm run dev`   | Servidor de desenvolvimento        |
+| `npm run build` | Build de produção                  |
+| `npm run start` | Servidor de produção               |
+| `npm run db:generate` | Gerar migração Drizzle       |
+| `npm run db:migrate`  | Aplicar migrações            |
+| `npm run db:push`     | Push schema (dev)             |
+| `npm run db:studio`   | Drizzle Studio (UI do banco)  |
+| `npm run db:seed`     | Seed de usuários              |
 
-## Deploy (Railway)
+## Estrutura
 
-Veja [DEPLOY_RAILWAY.md](./DEPLOY_RAILWAY.md) para instruções de deploy no Railway com SQLite persistente.
+```
+src/
+├── app/
+│   ├── api/auth/[...nextauth]/   # NextAuth route handler
+│   ├── login/                    # Página e formulário de login
+│   ├── clients/                  # Área protegida
+│   └── providers.tsx             # SessionProvider (NextAuth)
+├── db/
+│   ├── index.ts   # Conexão Drizzle
+│   ├── schema.ts  # Tabelas e relações
+│   └── seed.ts    # Seed inicial
+├── lib/
+│   └── auth.ts    # authOptions, getCurrentUser(), requireRole()
+└── middleware.ts  # Proteção de rotas (/clients, /api)
+```
 
-## Próximos passos (sugestões)
+## Autenticação
 
-- Integração com fluxo Vulpeinc (clientes vindos da formação de LLC).
-- Geração de PDF/XML do Form 5472 e pro forma 1120 a partir dos dados.
-- E-filing (envio ao IRS) via parceiro ou API.
-- Lembretes por e-mail (prazos federal e estado).
-- Autenticação para equipe Vulpeinc e/ou portal do cliente.
+- **Login:** `/login` (e-mail/senha). Após login → redireciona para `/clients`.
+- **Roles:** `admin` (full), `user` (leitura + edição; sem delete/import no MVP-1).
+- **Uso no server (Server Components, Route Handlers, Server Actions):**
+  - `const user = await getCurrentUser()` — retorna o usuário da sessão ou `null`.
+  - `const user = await requireRole(["admin"])` — exige uma das roles; retorna 401/403 se não autenticado ou sem permissão.
+- **Exemplos:** `GET /api/auth/me` (usuário atual), `GET /api/example-admin` (exige role admin).

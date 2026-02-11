@@ -1,36 +1,45 @@
 {
-  "name": "vulpetax",
+  "name": "eafc",
   "version": "0.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "start:prod": "npm run db:push && npm run start",
-    "lint": "eslint",
+    "lint": "next lint",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:push": "drizzle-kit push",
-    "db:studio": "drizzle-kit studio"
+    "db:studio": "drizzle-kit studio",
+    "db:seed": "npx tsx src/db/seed.ts",
+    "db:clear-clients": "npx tsx src/db/clearClients.ts",
+    "db:dedupe-clients": "npx tsx src/scripts/dedupeClientsByName.ts"
   },
   "dependencies": {
-    "better-sqlite3": "^12.6.2",
+    "bcryptjs": "^3.0.3",
+    "csv-parse": "^6.1.0",
+    "dotenv": "^17.2.4",
     "drizzle-orm": "^0.45.1",
-    "next": "16.1.6",
-    "pdf-lib": "^1.17.1",
-    "react": "19.2.3",
-    "react-dom": "19.2.3",
-    "drizzle-kit": "^0.31.9"
+    "googleapis": "^171.4.0",
+    "next": "14.2.35",
+    "next-auth": "^4.24.13",
+    "pg": "^8.18.0",
+    "react": "^18",
+    "react-dom": "^18",
+    "xlsx": "^0.18.5",
+    "zod": "^4.3.6"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4",
-    "@types/better-sqlite3": "^7.6.13",
+    "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
-    "@types/react": "^19",
-    "@types/react-dom": "^19",
-    "eslint": "^9",
-    "eslint-config-next": "16.1.6",
-    "tailwindcss": "^4",
+    "@types/react": "^18",
+    "@types/react-dom": "^18",
+    "drizzle-kit": "^0.31.9",
+    "eslint": "^8",
+    "eslint-config-next": "14.2.35",
+    "postcss": "^8",
+    "tailwindcss": "^3.4.1",
+    "tsx": "^4.21.0",
     "typescript": "^5"
   }
 }

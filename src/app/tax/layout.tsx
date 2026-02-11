@@ -1,0 +1,12 @@
+import { AppHeader } from "@/components/AppHeader";
+
+export const dynamic = "force-dynamic";
+
+export default function TaxLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <div className="min-h-screen bg-slate-50">
+      <AppHeader />
+      <main>{children}</main>
+    </div>
+  );
+}
