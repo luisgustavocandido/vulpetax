@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 
 const SYNC_KEY = "posvenda_llc";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const [row] = await db
     .select({

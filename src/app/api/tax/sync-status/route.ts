@@ -5,6 +5,8 @@ import { eq } from "drizzle-orm";
 
 const SYNC_KEY = "tax_form_2026";
 
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   const [row] = await db
     .select({

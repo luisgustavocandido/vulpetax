@@ -6,6 +6,8 @@ import { sql } from "drizzle-orm";
  * Rota de health check para verificar conexão com banco de dados.
  * Útil para diagnóstico.
  */
+export const dynamic = 'force-dynamic';
+
 export async function GET() {
   try {
     // Testa conexão básica
