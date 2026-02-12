@@ -2,6 +2,7 @@
 
 Next.js 14 + Drizzle ORM + PostgreSQL. Especificação em `docs/ESPECIFICACAO_MVP_CLIENTES.md`.
 
+
 ## Pré-requisitos
 
 - Node.js 18+
