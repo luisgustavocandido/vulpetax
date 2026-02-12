@@ -1,5 +1,9 @@
 {
-  
+  "functions": {
+    "src/app/api/clients/sync/confirm/route.ts": {
+      "maxDuration": 300
+    }
+  }
 }
 
 

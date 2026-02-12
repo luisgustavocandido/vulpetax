@@ -356,8 +356,17 @@ export async function applyPosVendaSync(
 ): Promise<PosVendaSyncResult> {
   let rowsImported = 0;
   const errors: { row: number; message: string }[] = [];
+  const startTime = Date.now();
+  const logInterval = Math.max(1, Math.floor(rows.length / 10)); // Log a cada 10% do progresso
+
+  console.log(`[applyPosVendaSync] Iniciando processamento de ${rows.length} linhas`);
 
   for (let i = 0; i < rows.length; i++) {
+    if (i % logInterval === 0 || i === rows.length - 1) {
+      const elapsed = Date.now() - startTime;
+      const progress = ((i + 1) / rows.length * 100).toFixed(1);
+      console.log(`[applyPosVendaSync] Progresso: ${i + 1}/${rows.length} (${progress}%) - ${elapsed}ms - Importadas: ${rowsImported}, Erros: ${errors.length}`);
+    }
     const rowIndex = i + 2;
     const row = rows[i]!;
     try {
@@ -376,34 +385,39 @@ export async function applyPosVendaSync(
         let clientId: string;
         let existingClient: typeof clients.$inferSelect | undefined;
 
-        if (customerCodeFromSheet) {
-          const [found] = await tx
-            .select()
-            .from(clients)
-            .where(
-              and(
-                eq(clients.customerCode, customerCodeFromSheet),
-                isNull(clients.deletedAt)
-              )
-            )
-            .limit(1);
-          existingClient = found;
-        }
-
-        if (!existingClient) {
-          const winnerId = await resolveNameDuplicates(
-            tx,
-            companyNameNormalized,
-            META_SYSTEM
-          );
-          if (winnerId) {
-            const [w] = await tx
+        try {
+          if (customerCodeFromSheet) {
+            const [found] = await tx
               .select()
               .from(clients)
-              .where(eq(clients.id, winnerId))
+              .where(
+                and(
+                  eq(clients.customerCode, customerCodeFromSheet),
+                  isNull(clients.deletedAt)
+                )
+              )
               .limit(1);
-            existingClient = w ?? undefined;
+            existingClient = found;
           }
+
+          if (!existingClient) {
+            const winnerId = await resolveNameDuplicates(
+              tx,
+              companyNameNormalized,
+              META_SYSTEM
+            );
+            if (winnerId) {
+              const [w] = await tx
+                .select()
+                .from(clients)
+                .where(eq(clients.id, winnerId))
+                .limit(1);
+              existingClient = w ?? undefined;
+            }
+          }
+        } catch (txErr) {
+          console.error(`[applyPosVendaSync] Erro ao buscar cliente existente (linha ${rowIndex}):`, txErr);
+          throw txErr;
         }
 
         if (existingClient) {
@@ -519,9 +533,19 @@ export async function applyPosVendaSync(
       rowsImported++;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
+      const errorDetails = err instanceof Error ? err.stack : undefined;
+      console.error(`[applyPosVendaSync] Erro ao processar linha ${rowIndex}:`, msg, errorDetails);
       errors.push({ row: rowIndex, message: msg });
+      
+      // Se houver muitos erros consecutivos, pode indicar um problema maior
+      if (errors.length > 10 && errors.length % 10 === 0) {
+        console.warn(`[applyPosVendaSync] Muitos erros acumulados: ${errors.length} erros em ${i + 1} linhas processadas`);
+      }
     }
   }
+
+  const totalTime = Date.now() - startTime;
+  console.log(`[applyPosVendaSync] Processamento concluído: ${rowsImported} importadas, ${errors.length} erros em ${totalTime}ms`);
 
   const [imported] = await db
     .insert(importHistory)

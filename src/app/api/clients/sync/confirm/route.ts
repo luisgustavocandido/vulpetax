@@ -25,6 +25,9 @@ function getIp(req: NextRequest): string | null {
 }
 
 /** POST /api/clients/sync/confirm — grava sincronização. Protegido por passcode (middleware). */
+export const dynamic = 'force-dynamic';
+export const maxDuration = 300; // 5 minutos para sincronizações grandes
+
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
 
@@ -47,8 +50,15 @@ export async function POST(request: NextRequest) {
   logSecurityEvent("sync_manual_attempt", { type: "posvenda", ip });
 
   try {
+    console.log(`[sync/confirm] Iniciando sincronização - IP: ${ip}`);
+    const startTime = Date.now();
+    
     const { rows } = await fetchPosVendaRows();
+    console.log(`[sync/confirm] Linhas obtidas: ${rows.length} (${Date.now() - startTime}ms)`);
+    
     const result = await applyPosVendaSync(rows);
+    const totalTime = Date.now() - startTime;
+    console.log(`[sync/confirm] Sincronização concluída em ${totalTime}ms - Importadas: ${result.rowsImported}, Erros: ${result.rowsErrors}`);
 
     return NextResponse.json({
       rowsTotal: result.rowsTotal,
