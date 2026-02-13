@@ -26,6 +26,27 @@ export type RequestMeta = {
 };
 
 /**
+ * URL base (origem) que o cliente usou, para redirects e cookies.
+ * Usa Host + x-forwarded-proto para que, na intranet (http://192.168.0.17:3000),
+ * o redirect não vá para localhost e o cookie seja enviado no host correto.
+ */
+export function getRequestOrigin(req: NextRequest): string {
+  const host = req.headers.get("host") ?? "";
+  const proto = req.headers.get("x-forwarded-proto");
+  const protocol =
+    proto === "https"
+      ? "https"
+      : (() => {
+          try {
+            return new URL(req.url).protocol.replace(":", "");
+          } catch {
+            return "http";
+          }
+        })();
+  return `${protocol}://${host}`;
+}
+
+/**
  * Metadados do request para auditoria: actor fixo "internal", IP e User-Agent.
  */
 export function getRequestMeta(req: NextRequest): RequestMeta {

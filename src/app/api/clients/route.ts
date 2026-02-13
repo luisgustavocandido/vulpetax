@@ -43,6 +43,7 @@ export async function GET(request: NextRequest) {
     const affiliate = searchParams.get("affiliate");
     const express = searchParams.get("express");
     const hasPartners = searchParams.get("hasPartners");
+    const orderPaymentDate = searchParams.get("orderPaymentDate")?.toLowerCase();
 
     const conditions = [isNull(clients.deletedAt)];
 
@@ -86,6 +87,13 @@ export async function GET(request: NextRequest) {
     }
     const where = and(...conditions);
 
+    const orderByClause =
+      orderPaymentDate === "desc"
+        ? sql`${clients.paymentDate} DESC NULLS LAST`
+        : orderPaymentDate === "asc"
+          ? sql`${clients.paymentDate} ASC NULLS LAST`
+          : desc(clients.createdAt);
+
     const list = await db
       .select({
         id: clients.id,
@@ -100,7 +108,7 @@ export async function GET(request: NextRequest) {
       .leftJoin(clientLineItems, eq(clientLineItems.clientId, clients.id))
       .where(where)
       .groupBy(clients.id)
-      .orderBy(desc(clients.createdAt))
+      .orderBy(orderByClause)
       .limit(limit)
       .offset(offset);
 
@@ -207,6 +215,9 @@ export async function POST(request: NextRequest) {
             kind: item.kind as LineItemKind,
             description: item.description,
             valueCents: item.valueCents,
+            saleDate: item.saleDate ?? null,
+            commercial: (item.commercial as CommercialSdr) ?? null,
+            sdr: (item.sdr as CommercialSdr) ?? null,
             meta: item.meta ?? null,
           });
         }
@@ -264,6 +275,9 @@ export async function POST(request: NextRequest) {
           kind: item.kind as LineItemKind,
           description: item.description,
           valueCents: item.valueCents,
+          saleDate: item.saleDate ?? null,
+          commercial: (item.commercial as CommercialSdr) ?? null,
+          sdr: (item.sdr as CommercialSdr) ?? null,
           meta: item.meta ?? null,
         });
       }

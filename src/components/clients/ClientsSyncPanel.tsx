@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname, useSearchParams } from "next/navigation";
 
 type SyncStatus = {
   lastSyncedAt: string | null;
@@ -37,6 +37,8 @@ const SYNC_TIMEOUT_MS = 120_000;
 
 export function ClientsSyncPanel() {
   const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
   const [status, setStatus] = useState<SyncStatus | null>(null);
   const [preview, setPreview] = useState<PreviewData | null>(null);
   const [loadingPreview, setLoadingPreview] = useState(false);
@@ -121,9 +123,7 @@ export function ClientsSyncPanel() {
         const msg =
           res.status === 409
             ? "Uma sincronização já está em execução. Aguarde."
-            : res.status === 429
-              ? "Aguarde 60 segundos antes de confirmar outra sincronização."
-              : err?.error ?? "Erro ao sincronizar.";
+            : err?.error ?? "Erro ao sincronizar.";
         setMessage({ type: "error", text: msg });
         return;
       }
@@ -135,7 +135,9 @@ export function ClientsSyncPanel() {
       setPreview(null);
       setConfirmed(false);
       await fetchStatus();
-      router.refresh();
+      // Força a tabela de clientes a recarregar navegando para a mesma URL (dados atualizados)
+      const query = searchParams.toString();
+      router.push(query ? `${pathname}?${query}` : pathname);
     } catch (err) {
       if (err instanceof Error && err.name === "AbortError") {
         setMessage({ type: "error", text: "Sincronização expirou (timeout)." });

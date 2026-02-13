@@ -1,14 +1,25 @@
+# VulpeTax — PostgreSQL para ambiente interno (LAN)
+# Uso: docker compose up -d
+# DATABASE_URL deve usar o mesmo user, password e db (ex.: postgresql://user:password@localhost:5432/vulpetax)
+
 services:
   postgres:
     image: postgres:16-alpine
+    container_name: vulpetax-postgres
+    restart: always
     environment:
-      POSTGRES_USER: vulpeinc
-      POSTGRES_PASSWORD: vulpeinc_dev
-      POSTGRES_DB: vulpeinc_clients
+      POSTGRES_USER: ${POSTGRES_USER:-user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-password}
+      POSTGRES_DB: ${POSTGRES_DB:-vulpetax}
     ports:
       - "5433:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U user -d vulpetax"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
 volumes:
   postgres_data:

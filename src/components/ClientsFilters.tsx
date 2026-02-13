@@ -10,6 +10,7 @@ type FilterValues = {
   affiliate?: string;
   express?: string;
   hasPartners?: string;
+  orderPaymentDate?: string;
   page?: string;
   limit?: string;
 };
@@ -49,6 +50,9 @@ export function ClientsFilters({ values }: ClientsFiltersProps) {
     <form method="GET" action="/clients" className="mb-4 space-y-4">
       <input type="hidden" name="page" value="1" />
       <input type="hidden" name="limit" value={values.limit ?? "20"} />
+      {values.orderPaymentDate && (
+        <input type="hidden" name="orderPaymentDate" value={values.orderPaymentDate} />
+      )}
 
       <div className="flex flex-wrap items-end gap-4">
         <div>

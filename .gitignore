@@ -41,3 +41,6 @@ next-env.d.ts
 # cursor/agents
 .cursor/
 .agents/
+
+# backups locais (intranet)
+/backups/

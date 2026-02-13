@@ -105,6 +105,9 @@ export const clientLineItems = pgTable(
     description: text("description").notNull(),
     valueCents: integer("value_cents").notNull().default(0),
     meta: jsonb("meta"),
+    saleDate: date("sale_date"),
+    commercial: varchar("commercial", { length: 50 }).$type<CommercialSdr>(),
+    sdr: varchar("sdr", { length: 50 }).$type<CommercialSdr>(),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

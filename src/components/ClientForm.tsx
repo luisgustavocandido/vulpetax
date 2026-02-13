@@ -15,6 +15,9 @@ const lineItemSchema = z.object({
   kind: z.enum(LINE_ITEM_KINDS as unknown as [string, ...string[]]),
   description: z.string().min(1, "Descrição obrigatória"),
   valueCents: z.number().int().min(0),
+  saleDate: z.string().optional(),
+  commercial: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
+  sdr: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
@@ -58,6 +61,9 @@ const EMPTY_ITEM: ClientFormData["items"][0] = {
   kind: "LLC",
   description: "",
   valueCents: 0,
+  saleDate: undefined,
+  commercial: undefined,
+  sdr: undefined,
 };
 const EMPTY_PARTNER: ClientFormData["partners"][0] = {
   fullName: "",
@@ -142,11 +148,25 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       .map((it, i) => {
         const desc = (fd.get(`item_desc_${i}`) ?? "").toString().trim();
         const valStr = (fd.get(`item_value_${i}`) ?? "0").toString().trim();
+        const saleDate = (fd.get(`item_saleDate_${i}`) ?? "").toString().trim() || undefined;
+        const commercial = (fd.get(`item_commercial_${i}`) ?? "").toString().trim() || undefined;
+        const sdr = (fd.get(`item_sdr_${i}`) ?? "").toString().trim() || undefined;
         if (!desc) return null;
+        const commercialVal =
+          commercial && commercialOptions.includes(commercial as (typeof commercialOptions)[number])
+            ? (commercial as (typeof commercialOptions)[number])
+            : undefined;
+        const sdrVal =
+          sdr && commercialOptions.includes(sdr as (typeof commercialOptions)[number])
+            ? (sdr as (typeof commercialOptions)[number])
+            : undefined;
         return {
           kind: it.kind,
           description: desc,
           valueCents: dollarsToCents(valStr),
+          saleDate,
+          commercial: commercialVal,
+          sdr: sdrVal,
         };
       })
       .filter(Boolean) as ClientFormData["items"];
@@ -372,12 +392,12 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       {/* ITENS */}
       <section className="space-y-4">
         <h2 className="border-b border-gray-200 pb-2 text-base font-semibold uppercase tracking-wide text-gray-600">
-          Itens (Descrição | Valor)
+          Itens (Tipo | Descrição | Valor | Sale Date | Comercial | SDR)
         </h2>
         <div className="space-y-3">
           {items.map((it, i) => (
             <div key={i} className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
-              <div className="min-w-[140px]">
+              <div className="min-w-[120px]">
                 <label className="block text-xs font-medium text-gray-500">Tipo</label>
                 <select
                   value={it.kind}
@@ -389,7 +409,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                   ))}
                 </select>
               </div>
-              <div className="min-w-[200px] flex-1">
+              <div className="min-w-[160px] flex-1">
                 <label className="block text-xs font-medium text-gray-500">Descrição</label>
                 <input
                   name={`item_desc_${i}`}
@@ -398,7 +418,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                   className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                 />
               </div>
-              <div className="w-28">
+              <div className="w-24">
                 <label className="block text-xs font-medium text-gray-500">Valor (US$)</label>
                 <input
                   name={`item_value_${i}`}
@@ -407,6 +427,43 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                   placeholder="0.00"
                   className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                 />
+              </div>
+              <div className="w-36">
+                <label className="block text-xs font-medium text-gray-500">Sale Date</label>
+                <input
+                  name={`item_saleDate_${i}`}
+                  type="date"
+                  defaultValue={"saleDate" in it && it.saleDate ? String(it.saleDate) : ""}
+                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                />
+              </div>
+              <div className="min-w-[100px]">
+                <label className="block text-xs font-medium text-gray-500">Comercial</label>
+                <select
+                  name={`item_commercial_${i}`}
+                  value={"commercial" in it ? String(it.commercial ?? "") : ""}
+                  onChange={(e) => updateItem(i, "commercial", e.target.value)}
+                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">Selecione</option>
+                  {commercialOptions.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
+              </div>
+              <div className="min-w-[100px]">
+                <label className="block text-xs font-medium text-gray-500">SDR</label>
+                <select
+                  name={`item_sdr_${i}`}
+                  value={"sdr" in it ? String(it.sdr ?? "") : ""}
+                  onChange={(e) => updateItem(i, "sdr", e.target.value)}
+                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                >
+                  <option value="">Selecione</option>
+                  {commercialOptions.map((o) => (
+                    <option key={o} value={o}>{o}</option>
+                  ))}
+                </select>
               </div>
               <button
                 type="button"

@@ -121,9 +121,7 @@ export function TaxSyncPanel() {
         const msg =
           res.status === 409
             ? "Uma sincronização já está em execução. Aguarde."
-            : res.status === 429
-              ? "Aguarde 60 segundos antes de confirmar outra sincronização."
-              : err?.error ?? "Erro ao sincronizar.";
+            : err?.error ?? "Erro ao sincronizar.";
         setMessage({ type: "error", text: msg });
         return;
       }

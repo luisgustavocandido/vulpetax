@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, clientLineItems, clientPartners, type LineItemKind, type PartnerRole } from "@/db/schema";
+import { clients, clientLineItems, clientPartners, type CommercialSdr, type LineItemKind, type PartnerRole } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { getRequestMeta } from "@/lib/requestMeta";
 import { logAudit, diffChangedFields } from "@/lib/audit";
@@ -38,6 +38,9 @@ export async function GET(
       kind: i.kind,
       description: i.description,
       valueCents: i.valueCents,
+      saleDate: i.saleDate ?? undefined,
+      commercial: i.commercial ?? undefined,
+      sdr: i.sdr ?? undefined,
       meta: i.meta,
     })),
     partners: partners.map((p) => ({
@@ -101,7 +104,7 @@ export async function PATCH(
     const partners = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
     return NextResponse.json({
       ...existing,
-      items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, meta: i.meta })),
+      items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, saleDate: i.saleDate ?? undefined, commercial: i.commercial ?? undefined, sdr: i.sdr ?? undefined, meta: i.meta })),
       partners: partners.map((p) => ({ id: p.id, fullName: p.fullName, role: p.role, percentage: p.percentageBasisPoints / 100, phone: p.phone })),
     });
   }
@@ -125,6 +128,9 @@ export async function PATCH(
           kind: item.kind as LineItemKind,
           description: item.description,
           valueCents: item.valueCents,
+          saleDate: item.saleDate ?? null,
+          commercial: (item.commercial as CommercialSdr) ?? null,
+          sdr: (item.sdr as CommercialSdr) ?? null,
           meta: item.meta ?? null,
         });
       }
@@ -178,7 +184,7 @@ export async function PATCH(
 
   return NextResponse.json({
     ...updated,
-    items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, meta: i.meta })),
+    items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, saleDate: i.saleDate ?? undefined, commercial: i.commercial ?? undefined, sdr: i.sdr ?? undefined, meta: i.meta })),
     partners: partners.map((p) => ({ id: p.id, fullName: p.fullName, role: p.role, percentage: p.percentageBasisPoints / 100, phone: p.phone })),
   });
 }

@@ -1,3 +1,5 @@
+import { PasscodeInput } from "@/components/PasscodeInput";
+
 type LoginPageProps = {
   searchParams?: {
     error?: string;
@@ -45,14 +47,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
             >
               Passcode
             </label>
-            <input
-              id="passcode"
-              name="passcode"
-              type="password"
-              autoComplete="off"
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm shadow-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-              required
-            />
+            <PasscodeInput />
           </div>
 
           <button

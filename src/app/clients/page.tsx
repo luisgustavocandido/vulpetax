@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
-import { getBaseUrl } from "@/lib/api";
+import { getBaseUrlFromHeaders } from "@/lib/api";
 import { ClientTable } from "@/components/ClientTable";
 import { Pagination } from "@/components/Pagination";
 import { ClientsFilters } from "@/components/ClientsFilters";
@@ -9,7 +9,7 @@ import { ClientsSyncPanel } from "@/components/clients/ClientsSyncPanel";
 const FILTER_KEYS = [
   "q", "commercial", "sdr", "paymentDateFrom", "paymentDateTo",
   "paymentMethod", "anonymous", "holding", "affiliate", "express",
-  "hasPartners",
+  "hasPartners", "orderPaymentDate",
 ] as const;
 
 type PageProps = {
@@ -39,9 +39,9 @@ export default async function ClientsPage({ searchParams }: PageProps) {
   }
   filterValues.limit = String(limit);
 
-  const base = getBaseUrl();
-  const apiUrl = `${base}/api/clients?${searchParamsStr.toString()}`;
   const headersList = await headers();
+  const base = getBaseUrlFromHeaders(headersList);
+  const apiUrl = `${base}/api/clients?${searchParamsStr.toString()}`;
   const cookie = headersList.get("cookie") ?? "";
 
   const res = await fetch(apiUrl, {
@@ -80,6 +80,14 @@ export default async function ClientsPage({ searchParams }: PageProps) {
         <div className="rounded-md bg-red-50 border border-red-200 p-4">
           <p className="text-red-800 font-medium">Erro ao carregar clientes</p>
           <p className="text-red-700 text-sm mt-1">{errorMessage}</p>
+          {res.status === 401 && (
+            <Link
+              href="/login?callbackUrl=/clients"
+              className="inline-block mt-3 text-sm font-medium text-blue-600 hover:text-blue-800"
+            >
+              Ir para o login →
+            </Link>
+          )}
           {process.env.NODE_ENV === "development" && (
             <>
               <p className="text-red-600 text-xs mt-2">Status: {res.status}</p>
@@ -150,7 +158,11 @@ export default async function ClientsPage({ searchParams }: PageProps) {
 
       <ClientsFilters values={filterValues} />
 
-      <ClientTable clients={data} />
+      <ClientTable
+        clients={data}
+        orderPaymentDate={filterValues.orderPaymentDate ?? null}
+        searchParamsForSort={Object.fromEntries(searchParamsStr.entries())}
+      />
 
       <Pagination
         page={currentPage}

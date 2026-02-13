@@ -5,10 +5,6 @@ import {
   updateSyncState,
 } from "@/lib/sync/runTaxFormSync";
 import {
-  taxSyncConfirmRateLimitCheck,
-  taxSyncConfirmRateLimitConsume,
-} from "@/lib/syncRateLimit";
-import {
   tryAdvisoryLock,
   releaseAdvisoryLock,
 } from "@/lib/advisoryLock";
@@ -28,13 +24,6 @@ function getIp(req: NextRequest): string | null {
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
 
-  if (!taxSyncConfirmRateLimitCheck(ip)) {
-    return NextResponse.json(
-      { error: "Aguarde 60 segundos antes de confirmar outra sincronização." },
-      { status: 429 }
-    );
-  }
-
   const acquired = await tryAdvisoryLock("taxForm");
   if (!acquired) {
     return NextResponse.json(
@@ -43,7 +32,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  taxSyncConfirmRateLimitConsume(ip);
   logSecurityEvent("sync_manual_attempt", { type: "tax_form", ip });
 
   try {

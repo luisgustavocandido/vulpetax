@@ -13,6 +13,9 @@ export const lineItemSchema = z.object({
   kind: lineItemKindSchema,
   description: z.string().min(1, "Descrição é obrigatória").max(2000, "Descrição muito longa"),
   valueCents: z.number().int().min(0, "Valor deve ser >= 0"),
+  saleDate: z.string().optional(),
+  commercial: commercialSdrSchema.optional(),
+  sdr: commercialSdrSchema.optional(),
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 

@@ -4,9 +4,40 @@ import {
   getSessionCookieName,
   verifySessionValue,
 } from "@/lib/passcodeSession";
+import { getRequestOrigin } from "@/lib/requestMeta";
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
+
+  // Bloquear rotas de debug fora de development (intranet)
+  if (pathname.startsWith("/api/debug") && process.env.NODE_ENV === "production") {
+    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Bloquear DISABLE_AUTH em produção (segurança intranet)
+  if (process.env.NODE_ENV === "production" && process.env.DISABLE_AUTH === "true") {
+    return NextResponse.json(
+      { error: "DISABLE_AUTH não é permitido em produção. Remova DISABLE_AUTH do .env e reinicie o app." },
+      { status: 503 }
+    );
+  }
+
+  // Bypass temporário: DISABLE_AUTH=true desliga a checagem de sessão (apenas desenvolvimento)
+  const authDisabled = process.env.DISABLE_AUTH === "true";
+  if (authDisabled) {
+    const res = NextResponse.next();
+    if (
+      pathname === "/clients" ||
+      pathname.startsWith("/clients/") ||
+      pathname === "/dashboard" ||
+      pathname.startsWith("/dashboard/") ||
+      pathname === "/tax" ||
+      pathname.startsWith("/tax/")
+    ) {
+      res.headers.set("Cache-Control", "no-store");
+    }
+    return res;
+  }
 
   const cookieValue = request.cookies.get(getSessionCookieName())?.value;
   const session = await verifySessionValue(cookieValue);
@@ -16,7 +47,7 @@ export async function middleware(request: NextRequest) {
     if (session) {
       const destination =
         request.nextUrl.searchParams.get("callbackUrl") || "/clients";
-      return NextResponse.redirect(new URL(destination, request.url));
+      return NextResponse.redirect(new URL(destination, getRequestOrigin(request)));
     }
     return NextResponse.next();
   }
@@ -50,7 +81,7 @@ export async function middleware(request: NextRequest) {
           { status: 401 }
         );
       }
-      const loginUrl = new URL("/login", request.url);
+      const loginUrl = new URL("/login", getRequestOrigin(request));
       loginUrl.searchParams.set("callbackUrl", pathname);
       return NextResponse.redirect(loginUrl);
     }

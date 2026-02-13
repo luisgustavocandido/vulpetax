@@ -5,10 +5,6 @@ import {
   updateSyncState,
 } from "@/lib/sync/runPosVendaSync";
 import {
-  clientsSyncConfirmRateLimitCheck,
-  clientsSyncConfirmRateLimitConsume,
-} from "@/lib/syncRateLimit";
-import {
   tryAdvisoryLock,
   releaseAdvisoryLock,
 } from "@/lib/advisoryLock";
@@ -31,13 +27,6 @@ export const maxDuration = 300; // 5 minutos para sincronizações grandes
 export async function POST(request: NextRequest) {
   const ip = getIp(request);
 
-  if (!clientsSyncConfirmRateLimitCheck(ip)) {
-    return NextResponse.json(
-      { error: "Aguarde 60 segundos antes de confirmar outra sincronização." },
-      { status: 429 }
-    );
-  }
-
   const acquired = await tryAdvisoryLock("posvenda");
   if (!acquired) {
     return NextResponse.json(
@@ -46,7 +35,6 @@ export async function POST(request: NextRequest) {
     );
   }
 
-  clientsSyncConfirmRateLimitConsume(ip);
   logSecurityEvent("sync_manual_attempt", { type: "posvenda", ip });
 
   try {
