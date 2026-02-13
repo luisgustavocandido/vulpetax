@@ -19,6 +19,28 @@ export const lineItemSchema = z.object({
   meta: z.record(z.string(), z.unknown()).optional(),
 });
 
+const partnerAddressFields = {
+  email: z.string().email("E-mail inválido"),
+  addressLine1: z.string().min(1, "Endereço (Linha 1) é obrigatório"),
+  addressLine2: z.string().max(255).optional().nullable(),
+  city: z.string().min(1, "Cidade é obrigatória"),
+  state: z.string().min(1, "Estado/Província é obrigatório"),
+  postalCode: z.string().min(1, "Código postal é obrigatório"),
+  country: z.string().min(1, "País é obrigatório"),
+};
+
+const partnerAddressFieldsOptional = {
+  email: z
+    .union([z.string().email("E-mail inválido"), z.literal(""), z.undefined(), z.null()])
+    .optional(),
+  addressLine1: z.string().max(255).optional().nullable(),
+  addressLine2: z.string().max(255).optional().nullable(),
+  city: z.string().max(255).optional().nullable(),
+  state: z.string().max(255).optional().nullable(),
+  postalCode: z.string().max(100).optional().nullable(),
+  country: z.string().max(255).optional().nullable(),
+};
+
 export const partnerSchema = z.object({
   fullName: z.string().min(1, "Nome do sócio é obrigatório"),
   role: partnerRoleSchema,
@@ -27,11 +49,35 @@ export const partnerSchema = z.object({
     .min(0, "Percentual deve ser >= 0")
     .max(100, "Percentual deve ser <= 100"),
   phone: z.string().max(50).optional(),
+  ...partnerAddressFields,
+});
+
+const partnerSchemaForUpdate = z.object({
+  fullName: z.string().min(1, "Nome do sócio é obrigatório"),
+  role: partnerRoleSchema,
+  percentage: z
+    .number()
+    .min(0, "Percentual deve ser >= 0")
+    .max(100, "Percentual deve ser <= 100"),
+  phone: z.string().max(50).optional(),
+  ...partnerAddressFieldsOptional,
 });
 
 const partnersSumRefine = (partners: { percentage: number }[]) => {
   const sum = partners.reduce((acc, p) => acc + p.percentage, 0);
   return sum <= 100;
+};
+
+const personalAddressFieldsOptional = {
+  email: z
+    .union([z.string().email("E-mail inválido"), z.literal(""), z.undefined(), z.null()])
+    .optional(),
+  personalAddressLine1: z.string().max(255).optional().nullable(),
+  personalAddressLine2: z.string().max(255).optional().nullable(),
+  personalCity: z.string().max(255).optional().nullable(),
+  personalState: z.string().max(255).optional().nullable(),
+  personalPostalCode: z.string().max(100).optional().nullable(),
+  personalCountry: z.string().max(255).optional().nullable(),
 };
 
 export const createClientSchema = z
@@ -48,8 +94,9 @@ export const createClientSchema = z
     affiliate: z.boolean().optional().default(false),
     express: z.boolean().optional().default(false),
     notes: z.string().max(2000).optional(),
+    ...personalAddressFieldsOptional,
     items: z.array(lineItemSchema).optional().default([]),
-    partners: z.array(partnerSchema).optional().default([]),
+    partners: z.array(partnerSchemaForUpdate).optional().default([]),
   })
   .refine(
     (data) => partnersSumRefine(data.partners ?? []),
@@ -70,8 +117,9 @@ export const updateClientSchema = z
     affiliate: z.boolean().optional(),
     express: z.boolean().optional(),
     notes: z.string().max(2000).optional(),
+    ...personalAddressFieldsOptional,
     items: z.array(lineItemSchema).optional(),
-    partners: z.array(partnerSchema).optional(),
+    partners: z.array(partnerSchemaForUpdate).optional(),
   })
   .refine(
     (data) => !data.partners || partnersSumRefine(data.partners),

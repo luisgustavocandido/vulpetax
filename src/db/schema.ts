@@ -67,6 +67,13 @@ export const clients = pgTable(
   affiliate: boolean("affiliate").notNull().default(false),
   express: boolean("express").notNull().default(false),
   notes: text("notes"),
+  email: text("email"),
+  personalAddressLine1: text("personal_address_line1"),
+  personalAddressLine2: text("personal_address_line2"),
+  personalCity: text("personal_city"),
+  personalState: text("personal_state"),
+  personalPostalCode: text("personal_postal_code"),
+  personalCountry: text("personal_country"),
   taxFormSource: varchar("tax_form_source", { length: 50 }),
   taxFormSubmittedAt: timestamp("tax_form_submitted_at", { withTimezone: true }),
   createdAt: timestamp("created_at", { withTimezone: true })
@@ -127,6 +134,13 @@ export const clientPartners = pgTable("client_partners", {
     .$type<PartnerRole>(),
   percentageBasisPoints: integer("percentage_basis_points").notNull(), // 10000 = 100%
   phone: varchar("phone", { length: 50 }),
+  email: text("email"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  state: text("state"),
+  postalCode: text("postal_code"),
+  country: text("country"),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -201,6 +215,12 @@ export const clientTaxProfile = pgTable("client_tax_profile", {
   ownerResidenceCountry: text("owner_residence_country"),
   ownerCitizenshipCountry: text("owner_citizenship_country"),
   ownerHomeAddressDifferent: boolean("owner_home_address_different").default(false),
+  ownerResidentialAddressLine1: text("owner_residential_address_line1"),
+  ownerResidentialAddressLine2: text("owner_residential_address_line2"),
+  ownerResidentialCity: text("owner_residential_city"),
+  ownerResidentialState: text("owner_residential_state"),
+  ownerResidentialPostalCode: text("owner_residential_postal_code"),
+  ownerResidentialCountry: text("owner_residential_country"),
   ownerUsTaxId: text("owner_us_tax_id"),
   ownerForeignTaxId: text("owner_foreign_tax_id"),
   llcFormationCostUsdCents: integer("llc_formation_cost_usd_cents"),
@@ -213,6 +233,11 @@ export const clientTaxProfile = pgTable("client_tax_profile", {
   totalWithdrawnFromLlcUsdCents: integer("total_withdrawn_from_llc_usd_cents"),
   personalExpensesPaidByCompanyUsdCents: integer("personal_expenses_paid_by_company_usd_cents"),
   businessExpensesPaidPersonallyUsdCents: integer("business_expenses_paid_personally_usd_cents"),
+  fbarWithdrawalsTotalUsdCents: integer("fbar_withdrawals_total_usd_cents"),
+  fbarPersonalTransfersToLlcUsdCents: integer("fbar_personal_transfers_to_llc_usd_cents"),
+  fbarPersonalWithdrawalsFromLlcUsdCents: integer("fbar_personal_withdrawals_from_llc_usd_cents"),
+  fbarPersonalExpensesPaidByCompanyUsdCents: integer("fbar_personal_expenses_paid_by_company_usd_cents"),
+  fbarBusinessExpensesPaidPersonallyUsdCents: integer("fbar_business_expenses_paid_personally_usd_cents"),
   passportCopiesProvided: boolean("passport_copies_provided").default(false),
   articlesOfOrganizationProvided: boolean("articles_of_organization_provided").default(false),
   einLetterProvided: boolean("ein_letter_provided").default(false),
@@ -224,6 +249,70 @@ export const clientTaxProfile = pgTable("client_tax_profile", {
   updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
 });
 
+// --- Nova tabela para múltiplos TAX forms por cliente (1:N) ---
+export const clientTaxForms = pgTable(
+  "client_tax_forms",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    taxYear: integer("tax_year").notNull(),
+    status: varchar("status", { length: 50 }).notNull().default("draft"),
+    llcName: text("llc_name"),
+    formationDate: date("formation_date"),
+    activitiesDescription: text("activities_description"),
+    einNumber: text("ein_number"),
+    llcUsAddressLine1: text("llc_us_address_line1"),
+    llcUsAddressLine2: text("llc_us_address_line2"),
+    llcUsCity: text("llc_us_city"),
+    llcUsState: text("llc_us_state"),
+    llcUsZip: text("llc_us_zip"),
+    ownerEmail: text("owner_email"),
+    ownerFullLegalName: text("owner_full_legal_name"),
+    ownerResidenceCountry: text("owner_residence_country"),
+    ownerCitizenshipCountry: text("owner_citizenship_country"),
+    ownerHomeAddressDifferent: boolean("owner_home_address_different").default(false),
+    ownerResidentialAddressLine1: text("owner_residential_address_line1"),
+    ownerResidentialAddressLine2: text("owner_residential_address_line2"),
+    ownerResidentialCity: text("owner_residential_city"),
+    ownerResidentialState: text("owner_residential_state"),
+    ownerResidentialPostalCode: text("owner_residential_postal_code"),
+    ownerResidentialCountry: text("owner_residential_country"),
+    ownerUsTaxId: text("owner_us_tax_id"),
+    ownerForeignTaxId: text("owner_foreign_tax_id"),
+    llcFormationCostUsdCents: integer("llc_formation_cost_usd_cents"),
+    hasAdditionalOwners: boolean("has_additional_owners").default(false),
+    totalAssetsUsdCents: integer("total_assets_usd_cents"),
+    hasUsBankAccounts: boolean("has_us_bank_accounts").default(false),
+    aggregateBalanceOver10k: boolean("aggregate_balance_over10k").default(false),
+    totalWithdrawalsUsdCents: integer("total_withdrawals_usd_cents"),
+    totalTransferredToLlcUsdCents: integer("total_transferred_to_llc_usd_cents"),
+    totalWithdrawnFromLlcUsdCents: integer("total_withdrawn_from_llc_usd_cents"),
+    personalExpensesPaidByCompanyUsdCents: integer("personal_expenses_paid_by_company_usd_cents"),
+    businessExpensesPaidPersonallyUsdCents: integer("business_expenses_paid_personally_usd_cents"),
+    fbarWithdrawalsTotalUsdCents: integer("fbar_withdrawals_total_usd_cents"),
+    fbarPersonalTransfersToLlcUsdCents: integer("fbar_personal_transfers_to_llc_usd_cents"),
+    fbarPersonalWithdrawalsFromLlcUsdCents: integer("fbar_personal_withdrawals_from_llc_usd_cents"),
+    fbarPersonalExpensesPaidByCompanyUsdCents: integer("fbar_personal_expenses_paid_by_company_usd_cents"),
+    fbarBusinessExpensesPaidPersonallyUsdCents: integer("fbar_business_expenses_paid_personally_usd_cents"),
+    passportCopiesProvided: boolean("passport_copies_provided").default(false),
+    articlesOfOrganizationProvided: boolean("articles_of_organization_provided").default(false),
+    einLetterProvided: boolean("ein_letter_provided").default(false),
+    additionalDocumentsProvided: boolean("additional_documents_provided").default(false),
+    additionalDocumentsNotes: text("additional_documents_notes"),
+    declarationAccepted: boolean("declaration_accepted").default(false),
+    declarationAcceptedAt: timestamp("declaration_accepted_at", { withTimezone: true }),
+    createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
+  },
+  (table) => [
+    index("client_tax_forms_client_id_idx").on(table.clientId),
+    index("client_tax_forms_tax_year_idx").on(table.taxYear),
+    unique("client_tax_forms_client_year_unique").on(table.clientId, table.taxYear),
+  ]
+);
+
 export const clientTaxOwners = pgTable(
   "client_tax_owners",
   {
@@ -231,6 +320,7 @@ export const clientTaxOwners = pgTable(
     clientId: uuid("client_id")
       .notNull()
       .references(() => clients.id, { onDelete: "cascade" }),
+    taxFormId: uuid("tax_form_id").references(() => clientTaxForms.id, { onDelete: "cascade" }),
     ownerIndex: integer("owner_index").notNull(),
     email: text("email"),
     fullLegalName: text("full_legal_name"),
@@ -243,6 +333,7 @@ export const clientTaxOwners = pgTable(
   },
   (table) => [
     index("client_tax_owners_client_id_idx").on(table.clientId),
+    index("client_tax_owners_tax_form_id_idx").on(table.taxFormId),
     unique("client_tax_owners_client_owner_unique").on(table.clientId, table.ownerIndex),
   ]
 );
@@ -270,6 +361,7 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   partners: many(clientPartners),
   taxProfile: one(clientTaxProfile),
   taxOwners: many(clientTaxOwners),
+  taxForms: many(clientTaxForms),
 }));
 
 export const clientLineItemsRelations = relations(clientLineItems, ({ one }) => ({
@@ -312,4 +404,16 @@ export const clientTaxOwnersRelations = relations(clientTaxOwners, ({ one }) => 
     fields: [clientTaxOwners.clientId],
     references: [clients.id],
   }),
+  taxForm: one(clientTaxForms, {
+    fields: [clientTaxOwners.taxFormId],
+    references: [clientTaxForms.id],
+  }),
+}));
+
+export const clientTaxFormsRelations = relations(clientTaxForms, ({ one, many }) => ({
+  client: one(clients, {
+    fields: [clientTaxForms.clientId],
+    references: [clients.id],
+  }),
+  owners: many(clientTaxOwners),
 }));

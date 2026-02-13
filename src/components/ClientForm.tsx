@@ -10,6 +10,7 @@ import {
 } from "@/db/schema";
 import { parsePhoneForDisplay } from "@/lib/countryCodes";
 import { SearchableCountrySelect } from "./SearchableCountrySelect";
+import { CountrySelectForAddress } from "./CountrySelectForAddress";
 
 const lineItemSchema = z.object({
   kind: z.enum(LINE_ITEM_KINDS as unknown as [string, ...string[]]),
@@ -26,6 +27,13 @@ const partnerSchema = z.object({
   role: z.enum(PARTNER_ROLES as unknown as [string, ...string[]]),
   percentage: z.number().min(0).max(100),
   phone: z.string().optional(),
+  email: z.string().optional(),
+  addressLine1: z.string().optional(),
+  addressLine2: z.string().optional(),
+  city: z.string().optional(),
+  state: z.string().optional(),
+  postalCode: z.string().optional(),
+  country: z.string().optional(),
 });
 
 const schema = z
@@ -42,6 +50,13 @@ const schema = z
     affiliate: z.boolean().default(false),
     express: z.boolean().default(false),
     notes: z.string().optional(),
+    email: z.string().email("E-mail inválido").optional().or(z.literal("")),
+    personalAddressLine1: z.string().optional(),
+    personalAddressLine2: z.string().optional(),
+    personalCity: z.string().optional(),
+    personalState: z.string().optional(),
+    personalPostalCode: z.string().optional(),
+    personalCountry: z.string().optional(),
     items: z.array(lineItemSchema).default([]),
     partners: z.array(partnerSchema).default([]),
   })
@@ -70,6 +85,13 @@ const EMPTY_PARTNER: ClientFormData["partners"][0] = {
   role: "Socio",
   percentage: 0,
   phone: "",
+  email: "",
+  addressLine1: "",
+  addressLine2: "",
+  city: "",
+  state: "",
+  postalCode: "",
+  country: "",
 };
 
 function formatCentsToDollars(cents: number): string {
@@ -105,6 +127,13 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
     affiliate: initialData?.affiliate ?? false,
     express: initialData?.express ?? false,
     notes: initialData?.notes ?? "",
+    email: initialData?.email ?? "",
+    personalAddressLine1: initialData?.personalAddressLine1 ?? "",
+    personalAddressLine2: initialData?.personalAddressLine2 ?? "",
+    personalCity: initialData?.personalCity ?? "",
+    personalState: initialData?.personalState ?? "",
+    personalPostalCode: initialData?.personalPostalCode ?? "",
+    personalCountry: initialData?.personalCountry ?? "",
   };
 
   function addItem() {
@@ -178,12 +207,26 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         const countryCode = (fd.get(`partner_phone_country_${i}`) ?? "+55").toString().trim();
         const localNumber = (fd.get(`partner_phone_${i}`) ?? "").toString().trim().replace(/\D/g, "");
         const phone = localNumber ? `${countryCode}${localNumber}` : undefined;
+        const email = (fd.get(`partner_email_${i}`) ?? "").toString().trim() || undefined;
+        const addressLine1 = (fd.get(`partner_addressLine1_${i}`) ?? "").toString().trim() || undefined;
+        const addressLine2 = (fd.get(`partner_addressLine2_${i}`) ?? "").toString().trim() || undefined;
+        const city = (fd.get(`partner_city_${i}`) ?? "").toString().trim() || undefined;
+        const state = (fd.get(`partner_state_${i}`) ?? "").toString().trim() || undefined;
+        const postalCode = (fd.get(`partner_postalCode_${i}`) ?? "").toString().trim() || undefined;
+        const country = (fd.get(`partner_country_${i}`) ?? "").toString().trim() || undefined;
         if (!name) return null;
         return {
           fullName: name,
           role: p.role,
           percentage: pct,
           phone,
+          email,
+          addressLine1,
+          addressLine2,
+          city,
+          state,
+          postalCode,
+          country,
         };
       })
       .filter(Boolean) as ClientFormData["partners"];
@@ -201,6 +244,13 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       affiliate: fd.get("affiliate") === "on",
       express: fd.get("express") === "on",
       notes: (fd.get("notes") ?? "").toString().trim() || undefined,
+      email: (fd.get("email") ?? "").toString().trim() || undefined,
+      personalAddressLine1: (fd.get("personalAddressLine1") ?? "").toString().trim() || undefined,
+      personalAddressLine2: (fd.get("personalAddressLine2") ?? "").toString().trim() || undefined,
+      personalCity: (fd.get("personalCity") ?? "").toString().trim() || undefined,
+      personalState: (fd.get("personalState") ?? "").toString().trim() || undefined,
+      personalPostalCode: (fd.get("personalPostalCode") ?? "").toString().trim() || undefined,
+      personalCountry: (fd.get("personalCountry") ?? "").toString().trim() || undefined,
       items: validItems,
       partners: validPartners,
     };
@@ -229,13 +279,24 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
 
     if (!res.ok) {
       setError(json.error ?? "Erro ao salvar");
-      const details = json.details as Record<string, string[] | string> | undefined;
-      if (details) {
+      const details = json.details as { fieldErrors?: Record<string, unknown> } | undefined;
+      if (details?.fieldErrors) {
         const errs: Partial<Record<string, string>> = {};
-        Object.entries(details).forEach(([k, v]) => {
-          const arr = Array.isArray(v) ? v : [v];
-          if (arr[0]) errs[k] = String(arr[0]);
-        });
+        const collect = (errObj: unknown, prefix: string) => {
+          if (!errObj || typeof errObj !== "object") return;
+          for (const [k, v] of Object.entries(errObj as Record<string, unknown>)) {
+            if (k === "_errors") continue;
+            const path = prefix ? `${prefix}.${k}` : k;
+            if (Array.isArray(v) && typeof v[0] === "string") {
+              errs[path] = v[0];
+            } else if (Array.isArray(v)) {
+              v.forEach((item, i) => collect(item, `${path}.${i}`));
+            } else if (v && typeof v === "object") {
+              collect(v, path);
+            }
+          }
+        };
+        collect(details.fieldErrors, "");
         setFieldErrors(errs);
       }
       setSubmitting(false);
@@ -389,6 +450,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         </div>
       </section>
 
+
       {/* ITENS */}
       <section className="space-y-4">
         <h2 className="border-b border-gray-200 pb-2 text-base font-semibold uppercase tracking-wide text-gray-600">
@@ -494,68 +556,154 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         )}
         <div className="space-y-3">
           {partners.map((p, i) => (
-            <div key={i} className="flex flex-wrap items-end gap-3 rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
-              <div className="min-w-[180px] flex-1">
-                <label className="block text-xs font-medium text-gray-500">Nome *</label>
-                <input
-                  name={`partner_name_${i}`}
-                  type="text"
-                  defaultValue={"fullName" in p ? String(p.fullName) : ""}
-                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                />
-              </div>
-              <div className="min-w-[120px]">
-                <label className="block text-xs font-medium text-gray-500">Papel</label>
-                <select
-                  value={p.role}
-                  onChange={(e) => updatePartner(i, "role", e.target.value)}
-                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                >
-                  {PARTNER_ROLES.map((r) => (
-                    <option key={r} value={r}>{r === "SocioPrincipal" ? "Sócio Principal" : "Sócio"}</option>
-                  ))}
-                </select>
-              </div>
-              <div className="w-20">
-                <label className="block text-xs font-medium text-gray-500">%</label>
-                <input
-                  name={`partner_pct_${i}`}
-                  type="number"
-                  min={0}
-                  max={100}
-                  step={0.01}
-                  defaultValue={"percentage" in p ? p.percentage : 0}
-                  className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                />
-              </div>
-              <div className="flex min-w-[200px] flex-1 flex-col gap-2 sm:flex-row sm:items-end sm:gap-2">
-                <div className="min-w-[140px] flex-1">
-                  <label className="block text-xs font-medium text-gray-500">País / DDI</label>
-                  <SearchableCountrySelect
-                    name={`partner_phone_country_${i}`}
-                    defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").countryCode}
-                    className="mt-1"
-                  />
-                </div>
-                <div className="min-w-[100px] flex-1">
-                  <label className="block text-xs font-medium text-gray-500">Telefone</label>
+            <div key={i} className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
+              <div className="flex flex-wrap items-end gap-3">
+                <div className="min-w-[180px] flex-1">
+                  <label className="block text-xs font-medium text-gray-500">Nome *</label>
                   <input
-                    name={`partner_phone_${i}`}
-                    type="tel"
-                    defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").localNumber}
-                    placeholder="11 99999-9999"
+                    name={`partner_name_${i}`}
+                    type="text"
+                    defaultValue={"fullName" in p ? String(p.fullName) : ""}
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                   />
                 </div>
+                <div className="min-w-[120px]">
+                  <label className="block text-xs font-medium text-gray-500">Papel</label>
+                  <select
+                    value={p.role}
+                    onChange={(e) => updatePartner(i, "role", e.target.value)}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  >
+                    {PARTNER_ROLES.map((r) => (
+                      <option key={r} value={r}>{r === "SocioPrincipal" ? "Sócio Principal" : "Sócio"}</option>
+                    ))}
+                  </select>
+                </div>
+                <div className="w-20">
+                  <label className="block text-xs font-medium text-gray-500">%</label>
+                  <input
+                    name={`partner_pct_${i}`}
+                    type="number"
+                    min={0}
+                    max={100}
+                    step={0.01}
+                    defaultValue={"percentage" in p ? p.percentage : 0}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div className="flex min-w-[200px] flex-1 flex-col gap-2 sm:flex-row sm:items-end sm:gap-2">
+                  <div className="min-w-[140px] flex-1">
+                    <label className="block text-xs font-medium text-gray-500">País / DDI</label>
+                    <SearchableCountrySelect
+                      name={`partner_phone_country_${i}`}
+                      defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").countryCode}
+                      className="mt-1"
+                    />
+                  </div>
+                  <div className="min-w-[100px] flex-1">
+                    <label className="block text-xs font-medium text-gray-500">Telefone</label>
+                    <input
+                      name={`partner_phone_${i}`}
+                      type="tel"
+                      defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").localNumber}
+                      placeholder="11 99999-9999"
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                </div>
+                <div className="flex items-end">
+                  <button
+                    type="button"
+                    onClick={() => removePartner(i)}
+                    className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 transition-colors"
+                  >
+                    Remover
+                  </button>
+                </div>
               </div>
-              <div className="flex items-end">
-                <button
-                  type="button"
-                  onClick={() => removePartner(i)}
-                  className="rounded-md bg-red-50 px-3 py-2 text-sm font-medium text-red-600 hover:bg-red-100 transition-colors"
-                >
-                  Remover
-                </button>
+              {/* Endereço pessoal do sócio */}
+              <div className="grid gap-3 border-t border-gray-200 pt-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-500">E-mail {!clientId && "*"}</label>
+                  <input
+                    name={`partner_email_${i}`}
+                    type="email"
+                    defaultValue={"email" in p ? String(p.email ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  {fieldErrors[`partners.${i}.email`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.email`]}</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-500">Endereço (Linha 1) {!clientId && "*"}</label>
+                  <input
+                    name={`partner_addressLine1_${i}`}
+                    type="text"
+                    defaultValue={"addressLine1" in p ? String(p.addressLine1 ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  {fieldErrors[`partners.${i}.addressLine1`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.addressLine1`]}</p>
+                  )}
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-gray-500">Endereço (Linha 2) <span className="text-gray-400">(Opcional)</span></label>
+                  <input
+                    name={`partner_addressLine2_${i}`}
+                    type="text"
+                    defaultValue={"addressLine2" in p ? String(p.addressLine2 ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Cidade {!clientId && "*"}</label>
+                  <input
+                    name={`partner_city_${i}`}
+                    type="text"
+                    defaultValue={"city" in p ? String(p.city ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  {fieldErrors[`partners.${i}.city`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.city`]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Estado/Província {!clientId && "*"}</label>
+                  <input
+                    name={`partner_state_${i}`}
+                    type="text"
+                    defaultValue={"state" in p ? String(p.state ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  {fieldErrors[`partners.${i}.state`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.state`]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">Código Postal {!clientId && "*"}</label>
+                  <input
+                    name={`partner_postalCode_${i}`}
+                    type="text"
+                    defaultValue={"postalCode" in p ? String(p.postalCode ?? "") : ""}
+                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                  />
+                  {fieldErrors[`partners.${i}.postalCode`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.postalCode`]}</p>
+                  )}
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-500">País {!clientId && "*"}</label>
+                  <CountrySelectForAddress
+                    name={`partner_country_${i}`}
+                    defaultValue={"country" in p ? String(p.country ?? "") : ""}
+                    required={!clientId}
+                    className="mt-1"
+                  />
+                  {fieldErrors[`partners.${i}.country`] && (
+                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.country`]}</p>
+                  )}
+                </div>
               </div>
             </div>
           ))}

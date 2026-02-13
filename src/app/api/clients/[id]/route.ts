@@ -49,6 +49,13 @@ export async function GET(
       role: p.role,
       percentage: p.percentageBasisPoints / 100,
       phone: p.phone,
+      email: p.email ?? undefined,
+      addressLine1: p.addressLine1 ?? undefined,
+      addressLine2: p.addressLine2 ?? undefined,
+      city: p.city ?? undefined,
+      state: p.state ?? undefined,
+      postalCode: p.postalCode ?? undefined,
+      country: p.country ?? undefined,
     })),
   });
 }
@@ -94,6 +101,13 @@ export async function PATCH(
   if (data.affiliate !== undefined) clientUpdates.affiliate = data.affiliate;
   if (data.express !== undefined) clientUpdates.express = data.express;
   if (data.notes !== undefined) clientUpdates.notes = data.notes;
+  if (data.email !== undefined) clientUpdates.email = data.email?.trim() || null;
+  if (data.personalAddressLine1 !== undefined) clientUpdates.personalAddressLine1 = data.personalAddressLine1?.trim() || null;
+  if (data.personalAddressLine2 !== undefined) clientUpdates.personalAddressLine2 = data.personalAddressLine2?.trim() || null;
+  if (data.personalCity !== undefined) clientUpdates.personalCity = data.personalCity?.trim() || null;
+  if (data.personalState !== undefined) clientUpdates.personalState = data.personalState?.trim() || null;
+  if (data.personalPostalCode !== undefined) clientUpdates.personalPostalCode = data.personalPostalCode?.trim() || null;
+  if (data.personalCountry !== undefined) clientUpdates.personalCountry = data.personalCountry?.trim() || null;
 
   const hasClientUpdates = Object.keys(clientUpdates).length > 0;
   const hasItems = data.items !== undefined;
@@ -105,7 +119,20 @@ export async function PATCH(
     return NextResponse.json({
       ...existing,
       items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, saleDate: i.saleDate ?? undefined, commercial: i.commercial ?? undefined, sdr: i.sdr ?? undefined, meta: i.meta })),
-      partners: partners.map((p) => ({ id: p.id, fullName: p.fullName, role: p.role, percentage: p.percentageBasisPoints / 100, phone: p.phone })),
+      partners: partners.map((p) => ({
+        id: p.id,
+        fullName: p.fullName,
+        role: p.role,
+        percentage: p.percentageBasisPoints / 100,
+        phone: p.phone,
+        email: p.email ?? undefined,
+        addressLine1: p.addressLine1 ?? undefined,
+        addressLine2: p.addressLine2 ?? undefined,
+        city: p.city ?? undefined,
+        state: p.state ?? undefined,
+        postalCode: p.postalCode ?? undefined,
+        country: p.country ?? undefined,
+      })),
     });
   }
 
@@ -145,6 +172,13 @@ export async function PATCH(
           role: p.role as PartnerRole,
           percentageBasisPoints: percentToBasisPoints(p.percentage),
           phone: p.phone ?? null,
+          email: p.email?.trim() || null,
+          addressLine1: p.addressLine1?.trim() || null,
+          addressLine2: p.addressLine2?.trim() || null,
+          city: p.city?.trim() || null,
+          state: p.state?.trim() || null,
+          postalCode: p.postalCode?.trim() || null,
+          country: p.country?.trim() || null,
         });
       }
     }

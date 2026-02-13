@@ -77,6 +77,13 @@ export default async function EditClientPage({ params }: PageProps) {
             affiliate: client.affiliate ?? false,
             express: client.express ?? false,
             notes: client.notes ?? "",
+            email: client.email ?? "",
+            personalAddressLine1: client.personalAddressLine1 ?? "",
+            personalAddressLine2: client.personalAddressLine2 ?? "",
+            personalCity: client.personalCity ?? "",
+            personalState: client.personalState ?? "",
+            personalPostalCode: client.personalPostalCode ?? "",
+            personalCountry: client.personalCountry ?? "",
             items: client.items ?? [],
             partners: client.partners ?? [],
           }}

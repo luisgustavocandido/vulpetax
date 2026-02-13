@@ -204,6 +204,13 @@ export async function POST(request: NextRequest) {
           affiliate: data.affiliate ?? false,
           express: data.express ?? false,
           notes: data.notes ?? null,
+          email: data.email?.trim() || null,
+          personalAddressLine1: data.personalAddressLine1?.trim() || null,
+          personalAddressLine2: data.personalAddressLine2?.trim() || null,
+          personalCity: data.personalCity?.trim() || null,
+          personalState: data.personalState?.trim() || null,
+          personalPostalCode: data.personalPostalCode?.trim() || null,
+          personalCountry: data.personalCountry?.trim() || null,
           updatedAt: new Date(),
         };
         await tx.update(clients).set(clientUpdates).where(eq(clients.id, winnerId));
@@ -230,6 +237,13 @@ export async function POST(request: NextRequest) {
             role: p.role as PartnerRole,
             percentageBasisPoints: percentToBasisPoints(p.percentage),
             phone: p.phone ?? null,
+            email: p.email?.trim() || null,
+            addressLine1: p.addressLine1?.trim() || null,
+            addressLine2: p.addressLine2?.trim() || null,
+            city: p.city?.trim() || null,
+            state: p.state?.trim() || null,
+            postalCode: p.postalCode?.trim() || null,
+            country: p.country?.trim() || null,
           });
         }
 
@@ -265,6 +279,13 @@ export async function POST(request: NextRequest) {
         affiliate: data.affiliate ?? false,
         express: data.express ?? false,
         notes: data.notes ?? null,
+        email: data.email?.trim() || null,
+        personalAddressLine1: data.personalAddressLine1?.trim() || null,
+        personalAddressLine2: data.personalAddressLine2?.trim() || null,
+        personalCity: data.personalCity?.trim() || null,
+        personalState: data.personalState?.trim() || null,
+        personalPostalCode: data.personalPostalCode?.trim() || null,
+        personalCountry: data.personalCountry?.trim() || null,
       };
       const [row] = await tx.insert(clients).values(clientValues).returning({ id: clients.id });
       if (!row) throw new Error("Insert failed");
@@ -289,6 +310,13 @@ export async function POST(request: NextRequest) {
           role: p.role as PartnerRole,
           percentageBasisPoints: percentToBasisPoints(p.percentage),
           phone: p.phone ?? null,
+          email: p.email?.trim() || null,
+          addressLine1: p.addressLine1?.trim() || null,
+          addressLine2: p.addressLine2?.trim() || null,
+          city: p.city?.trim() || null,
+          state: p.state?.trim() || null,
+          postalCode: p.postalCode?.trim() || null,
+          country: p.country?.trim() || null,
         });
       }
 
