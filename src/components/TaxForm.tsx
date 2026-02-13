@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { UNIQUE_COUNTRY_CODES } from "@/lib/countryCodes";
 type TaxProfile = {
   llcName?: string | null;
   formationDate?: string | null;
@@ -16,13 +17,18 @@ type TaxProfile = {
   ownerResidenceCountry?: string | null;
   ownerCitizenshipCountry?: string | null;
   ownerHomeAddressDifferent?: boolean | null;
+  ownerResidentialAddressLine1?: string | null;
+  ownerResidentialAddressLine2?: string | null;
+  ownerResidentialCity?: string | null;
+  ownerResidentialState?: string | null;
+  ownerResidentialPostalCode?: string | null;
+  ownerResidentialCountry?: string | null;
   ownerUsTaxId?: string | null;
   ownerForeignTaxId?: string | null;
   llcFormationCostUsdCents?: number | null;
   hasAdditionalOwners?: boolean | null;
   totalAssetsUsdCents?: number | null;
   hasUsBankAccounts?: boolean | null;
-  aggregateBalanceOver10k?: boolean | null;
   totalWithdrawalsUsdCents?: number | null;
   totalTransferredToLlcUsdCents?: number | null;
   totalWithdrawnFromLlcUsdCents?: number | null;
@@ -92,6 +98,7 @@ function validateOwner(o: FormOwner): string | null {
 
 type Props = {
   clientId: string;
+  taxFormId?: string;
   companyName: string;
   initialProfile: TaxProfile | null;
   initialOwners: TaxOwner[];
@@ -107,6 +114,7 @@ function toUsdInput(cents: number | null | undefined): string {
 
 export function TaxForm({
   clientId,
+  taxFormId,
   companyName,
   initialProfile,
   initialOwners,
@@ -133,13 +141,18 @@ export function TaxForm({
     ownerResidenceCountry: p.ownerResidenceCountry ?? "",
     ownerCitizenshipCountry: p.ownerCitizenshipCountry ?? "",
     ownerHomeAddressDifferent: p.ownerHomeAddressDifferent ?? false,
+    ownerResidentialAddressLine1: p.ownerResidentialAddressLine1 ?? "",
+    ownerResidentialAddressLine2: p.ownerResidentialAddressLine2 ?? "",
+    ownerResidentialCity: p.ownerResidentialCity ?? "",
+    ownerResidentialState: p.ownerResidentialState ?? "",
+    ownerResidentialPostalCode: p.ownerResidentialPostalCode ?? "",
+    ownerResidentialCountry: p.ownerResidentialCountry ?? "",
     ownerUsTaxId: p.ownerUsTaxId ?? "",
     ownerForeignTaxId: p.ownerForeignTaxId ?? "",
     llcFormationCostUsdCents: toUsdInput(p.llcFormationCostUsdCents ?? undefined),
     hasAdditionalOwners: p.hasAdditionalOwners ?? false,
     totalAssetsUsdCents: toUsdInput(p.totalAssetsUsdCents ?? undefined),
     hasUsBankAccounts: p.hasUsBankAccounts ?? false,
-    aggregateBalanceOver10k: p.aggregateBalanceOver10k ?? false,
     totalWithdrawalsUsdCents: toUsdInput(p.totalWithdrawalsUsdCents ?? undefined),
     totalTransferredToLlcUsdCents: toUsdInput(p.totalTransferredToLlcUsdCents ?? undefined),
     totalWithdrawnFromLlcUsdCents: toUsdInput(p.totalWithdrawnFromLlcUsdCents ?? undefined),
@@ -208,6 +221,15 @@ export function TaxForm({
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    const assetsVal = parseUsd(form.totalAssetsUsdCents);
+    if (assetsVal === null || assetsVal < 0) {
+      setMessage({ type: "error", text: "Ativos totais da empresa até 31 de dezembro é obrigatório (>= 0)." });
+      return;
+    }
+    if (form.hasUsBankAccounts === undefined) {
+      setMessage({ type: "error", text: "Selecione Sim ou Não para contas bancárias nos EUA." });
+      return;
+    }
     if (form.hasAdditionalOwners) {
       for (const o of form.owners) {
         const err = validateOwner(o);
@@ -249,13 +271,18 @@ export function TaxForm({
         ownerResidenceCountry: form.ownerResidenceCountry || undefined,
         ownerCitizenshipCountry: form.ownerCitizenshipCountry || undefined,
         ownerHomeAddressDifferent: form.ownerHomeAddressDifferent,
+        ownerResidentialAddressLine1: form.ownerHomeAddressDifferent ? (form.ownerResidentialAddressLine1 || undefined) : undefined,
+        ownerResidentialAddressLine2: form.ownerHomeAddressDifferent ? (form.ownerResidentialAddressLine2 || undefined) : undefined,
+        ownerResidentialCity: form.ownerHomeAddressDifferent ? (form.ownerResidentialCity || undefined) : undefined,
+        ownerResidentialState: form.ownerHomeAddressDifferent ? (form.ownerResidentialState || undefined) : undefined,
+        ownerResidentialPostalCode: form.ownerHomeAddressDifferent ? (form.ownerResidentialPostalCode || undefined) : undefined,
+        ownerResidentialCountry: form.ownerHomeAddressDifferent ? (form.ownerResidentialCountry || undefined) : undefined,
         ownerUsTaxId: form.ownerUsTaxId || undefined,
         ownerForeignTaxId: form.ownerForeignTaxId || undefined,
         llcFormationCostUsdCents: parseUsd(form.llcFormationCostUsdCents),
         hasAdditionalOwners: form.hasAdditionalOwners,
         totalAssetsUsdCents: parseUsd(form.totalAssetsUsdCents),
         hasUsBankAccounts: form.hasUsBankAccounts,
-        aggregateBalanceOver10k: form.aggregateBalanceOver10k,
         totalWithdrawalsUsdCents: parseUsd(form.totalWithdrawalsUsdCents),
         totalTransferredToLlcUsdCents: parseUsd(form.totalTransferredToLlcUsdCents),
         totalWithdrawnFromLlcUsdCents: parseUsd(form.totalWithdrawnFromLlcUsdCents),
@@ -269,7 +296,10 @@ export function TaxForm({
         declarationAccepted: form.declarationAccepted,
         owners: ownersPayload,
       };
-      const res = await fetch(`/api/clients/${clientId}/tax`, {
+      const url = taxFormId
+        ? `/api/clients/${clientId}/tax/forms/${taxFormId}`
+        : `/api/clients/${clientId}/tax`;
+      const res = await fetch(url, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload),
@@ -454,13 +484,98 @@ export function TaxForm({
               type="checkbox"
               id="ownerHomeAddressDifferent"
               checked={form.ownerHomeAddressDifferent}
-              onChange={(e) => setForm((f) => ({ ...f, ownerHomeAddressDifferent: e.target.checked }))}
+              onChange={(e) => {
+                const checked = e.target.checked;
+                setForm((f) => ({
+                  ...f,
+                  ownerHomeAddressDifferent: checked,
+                  ...(!checked && {
+                    ownerResidentialAddressLine1: "",
+                    ownerResidentialAddressLine2: "",
+                    ownerResidentialCity: "",
+                    ownerResidentialState: "",
+                    ownerResidentialPostalCode: "",
+                    ownerResidentialCountry: "",
+                  }),
+                }));
+              }}
               className="rounded border-slate-300"
             />
             <label htmlFor="ownerHomeAddressDifferent" className="text-xs font-medium text-slate-600">
               Endereço residencial diferente do endereço da LLC *
             </label>
           </div>
+          {form.ownerHomeAddressDifferent && (
+            <div className="sm:col-span-2 space-y-4 rounded-lg border border-slate-200 bg-slate-50/50 p-4">
+              <h4 className="text-xs font-semibold text-slate-700">
+                Endereço residencial (se diferente do endereço da empresa)
+              </h4>
+              <div className="grid gap-4 sm:grid-cols-2">
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600">Endereço *</label>
+                  <input
+                    type="text"
+                    value={form.ownerResidentialAddressLine1}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialAddressLine1: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Linha 1"
+                  />
+                </div>
+                <div className="sm:col-span-2">
+                  <label className="block text-xs font-medium text-slate-600">Endereço (linha 2)</label>
+                  <input
+                    type="text"
+                    value={form.ownerResidentialAddressLine2}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialAddressLine2: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                    placeholder="Opcional"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">Cidade *</label>
+                  <input
+                    type="text"
+                    value={form.ownerResidentialCity}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialCity: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">Estado/Província *</label>
+                  <input
+                    type="text"
+                    value={form.ownerResidentialState}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialState: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">Código postal *</label>
+                  <input
+                    type="text"
+                    value={form.ownerResidentialPostalCode}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialPostalCode: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-slate-600">País *</label>
+                  <select
+                    value={form.ownerResidentialCountry}
+                    onChange={(e) => setForm((f) => ({ ...f, ownerResidentialCountry: e.target.value }))}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+                  >
+                    <option value="">Selecione...</option>
+                    {UNIQUE_COUNTRY_CODES.map((c) => (
+                      <option key={c.code} value={c.name}>
+                        {c.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            </div>
+          )}
           <div>
             <label className="block text-xs font-medium text-slate-600">US Tax ID (se aplicável)</label>
             <input
@@ -611,44 +726,89 @@ export function TaxForm({
       )}
 
       <section className="rounded-lg border border-slate-200 bg-white p-6">
-        <h3 className="mb-4 text-sm font-semibold text-slate-800">Sobre os ativos da empresa</h3>
+        <h3 className="mb-4 text-sm font-semibold text-slate-800">Ativos da empresa</h3>
         <div className="grid gap-4 sm:grid-cols-2">
           <div>
-            <label className="block text-xs font-medium text-slate-600">Ativos totais até 31/dez (USD) *</label>
+            <label className="block text-xs font-medium text-slate-600">Ativos totais da empresa até 31 de dezembro *</label>
+            <div className="mt-1 flex rounded-md border border-slate-300 shadow-sm">
+              <span className="inline-flex items-center rounded-l-md border-r border-slate-300 bg-slate-50 px-3 text-sm text-slate-600">$ USD</span>
+              <input
+                type="text"
+                placeholder="0,00"
+                value={form.totalAssetsUsdCents}
+                onChange={(e) => setForm((f) => ({ ...f, totalAssetsUsdCents: e.target.value }))}
+                className="block w-full flex-1 rounded-none rounded-r-md border-0 bg-white px-3 py-2 text-sm focus:ring-1 focus:ring-slate-500"
+              />
+            </div>
+            <p className="mt-1 text-xs text-slate-500">(dinheiro, estoque ao custo, equipamentos, etc.)</p>
+          </div>
+          <div className="sm:col-span-2">
+            <label className="block text-xs font-medium text-slate-600">
+              A empresa possui contas bancárias nos EUA em nome da LLC? *
+            </label>
+            <div className="mt-2 flex gap-6">
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="hasUsBankAccounts"
+                  checked={form.hasUsBankAccounts === true}
+                  onChange={() => setForm((f) => ({ ...f, hasUsBankAccounts: true }))}
+                  className="border-slate-300 text-slate-600 focus:ring-slate-500"
+                />
+                <span className="text-sm text-slate-700">Sim</span>
+              </label>
+              <label className="flex items-center gap-2">
+                <input
+                  type="radio"
+                  name="hasUsBankAccounts"
+                  checked={form.hasUsBankAccounts === false}
+                  onChange={() => setForm((f) => ({ ...f, hasUsBankAccounts: false }))}
+                  className="border-slate-300 text-slate-600 focus:ring-slate-500"
+                />
+                <span className="text-sm text-slate-700">Não</span>
+              </label>
+            </div>
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Valor total transferido pessoalmente para a LLC (USD)</label>
             <input
               type="text"
               placeholder="0,00"
-              value={form.totalAssetsUsdCents}
-              onChange={(e) => setForm((f) => ({ ...f, totalAssetsUsdCents: e.target.value }))}
+              value={form.totalTransferredToLlcUsdCents}
+              onChange={(e) => setForm((f) => ({ ...f, totalTransferredToLlcUsdCents: e.target.value }))}
               className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
           </div>
-          <div className="sm:col-span-2 flex items-center gap-2">
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Valor total retirado pessoalmente da LLC (USD)</label>
             <input
-              type="checkbox"
-              id="hasUsBankAccounts"
-              checked={form.hasUsBankAccounts}
-              onChange={(e) => setForm((f) => ({ ...f, hasUsBankAccounts: e.target.checked }))}
-              className="rounded border-slate-300"
+              type="text"
+              placeholder="0,00"
+              value={form.totalWithdrawnFromLlcUsdCents}
+              onChange={(e) => setForm((f) => ({ ...f, totalWithdrawnFromLlcUsdCents: e.target.value }))}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
             />
-            <label htmlFor="hasUsBankAccounts" className="text-xs font-medium text-slate-600">
-              Possui contas bancárias nos EUA
-            </label>
           </div>
-          {form.hasUsBankAccounts && (
-            <div className="sm:col-span-2 flex items-center gap-2">
-              <input
-                type="checkbox"
-                id="aggregateBalanceOver10k"
-                checked={form.aggregateBalanceOver10k}
-                onChange={(e) => setForm((f) => ({ ...f, aggregateBalanceOver10k: e.target.checked }))}
-                className="rounded border-slate-300"
-              />
-              <label htmlFor="aggregateBalanceOver10k" className="text-xs font-medium text-slate-600">
-                Saldo agregado superior a US$ 10.000 no ano (FBAR)
-              </label>
-            </div>
-          )}
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Valor total das despesas pessoais pagas com fundos comerciais (USD)</label>
+            <input
+              type="text"
+              placeholder="0,00"
+              value={form.personalExpensesPaidByCompanyUsdCents}
+              onChange={(e) => setForm((f) => ({ ...f, personalExpensesPaidByCompanyUsdCents: e.target.value }))}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-medium text-slate-600">Valor total das despesas comerciais pagas com fundos pessoais (USD)</label>
+            <input
+              type="text"
+              placeholder="0,00"
+              value={form.businessExpensesPaidPersonallyUsdCents}
+              onChange={(e) => setForm((f) => ({ ...f, businessExpensesPaidPersonallyUsdCents: e.target.value }))}
+              className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 text-sm"
+            />
+          </div>
         </div>
       </section>
 

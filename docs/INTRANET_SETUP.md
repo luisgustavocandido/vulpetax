@@ -84,6 +84,34 @@ npm run db:migrate
 
 Execute isso após o primeiro `docker compose up -d` e sempre que houver novas migrações no projeto.
 
+**⚠️ IMPORTANTE — Migração obrigatória para múltiplos TAX forms:**
+
+Se você está habilitando o sistema de múltiplos formulários TAX por cliente, certifique-se de aplicar a migração `drizzle/0010_client_tax_forms.sql`:
+
+```bash
+# Opção 1: Usando Drizzle Kit (recomendado)
+npm run db:migrate
+
+# Opção 2: Aplicar manualmente via psql
+docker exec -i vulpetax-postgres psql -U user vulpetax < drizzle/0010_client_tax_forms.sql
+
+# Opção 3: Copiar e colar o SQL diretamente no psql
+docker exec -it vulpetax-postgres psql -U user vulpetax
+# Depois cole o conteúdo de drizzle/0010_client_tax_forms.sql
+```
+
+**Verificar se migração foi aplicada:**
+
+```bash
+# Verificar tabelas críticas
+npm run db:check
+
+# Ou verificar via health endpoint
+curl http://localhost:3000/api/health
+```
+
+O comando `db:check` verifica se todas as tabelas críticas (incluindo `client_tax_forms`) existem e avisa se alguma migração está pendente.
+
 ---
 
 ## 3. Scripts npm (produção LAN)

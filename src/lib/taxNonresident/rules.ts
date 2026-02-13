@@ -28,6 +28,12 @@ export type TaxProfileData = {
   ownerResidenceCountry?: string | null;
   ownerCitizenshipCountry?: string | null;
   ownerHomeAddressDifferent?: boolean | null;
+  ownerResidentialAddressLine1?: string | null;
+  ownerResidentialAddressLine2?: string | null;
+  ownerResidentialCity?: string | null;
+  ownerResidentialState?: string | null;
+  ownerResidentialPostalCode?: string | null;
+  ownerResidentialCountry?: string | null;
   ownerUsTaxId?: string | null;
   ownerForeignTaxId?: string | null;
   llcFormationCostUsdCents?: number | null;
@@ -92,6 +98,19 @@ export function computeTaxStatus(profile: TaxProfileData | null): {
     }
   }
 
+  if (profile.ownerHomeAddressDifferent === true) {
+    const resRequired: (keyof TaxProfileData)[] = [
+      "ownerResidentialAddressLine1",
+      "ownerResidentialCity",
+      "ownerResidentialState",
+      "ownerResidentialPostalCode",
+      "ownerResidentialCountry",
+    ];
+    for (const field of resRequired) {
+      if (isEmpty(profile[field])) missingFields.push(field);
+    }
+  }
+
   if (missingFields.length > 0) {
     return { status: TAX_STATUS.INCOMPLETO, missingFields };
   }
@@ -107,9 +126,6 @@ export function computeTaxAlerts(profile: TaxProfileData | null): string[] {
   const alerts: string[] = [];
   if (!profile) return alerts;
 
-  if (profile.hasUsBankAccounts && profile.aggregateBalanceOver10k) {
-    alerts.push("Possível necessidade de FBAR (FinCEN 114) – custo adicional informado no formulário");
-  }
   if (!profile.formationDate || profile.formationDate.toString().trim() === "") {
     alerts.push("Data de formação necessária");
   }
@@ -138,6 +154,11 @@ export const FIELD_LABELS: Record<string, string> = {
   ownerResidenceCountry: "País de residência",
   ownerCitizenshipCountry: "País de cidadania",
   ownerHomeAddressDifferent: "Endereço residencial diferente",
+  ownerResidentialAddressLine1: "Endereço residencial linha 1",
+  ownerResidentialCity: "Cidade residencial",
+  ownerResidentialState: "Estado residencial",
+  ownerResidentialPostalCode: "Código postal residencial",
+  ownerResidentialCountry: "País residencial",
   llcFormationCostUsdCents: "Custo de formação (USD)",
   totalAssetsUsdCents: "Ativos totais (USD)",
   passportCopiesProvided: "Cópias do passaporte",

@@ -3,6 +3,7 @@ import { headers } from "next/headers";
 import { getBaseUrl } from "@/lib/api";
 import { TaxSyncPanel } from "@/components/tax/TaxSyncPanel";
 import { TaxRemoveButton } from "@/components/tax/TaxRemoveButton";
+import { TaxPageHeaderActions } from "@/components/tax/TaxPageHeaderActions";
 
 type TaxRow = {
   clientId: string;
@@ -67,15 +68,10 @@ export default async function TaxListPage({ searchParams }: PageProps) {
           <div className="flex items-center gap-3">
             <h1 className="text-xl font-semibold text-slate-900">TAX (Não Residentes)</h1>
             <span className="rounded-md bg-slate-100 px-2 py-1 text-xs font-medium text-slate-600">
-              Fonte: Google Sheets TAX Form
+              Fonte: Google Sheets + manuais
             </span>
           </div>
-          <Link
-            href="/clients"
-            className="rounded-lg border border-slate-300 bg-white px-4 py-2 text-sm font-medium text-slate-700 hover:bg-slate-50"
-          >
-            Clientes
-          </Link>
+          <TaxPageHeaderActions />
         </div>
         <TaxSyncPanel />
       </div>

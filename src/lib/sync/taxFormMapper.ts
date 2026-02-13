@@ -28,6 +28,12 @@ export type ParsedTaxFormRow = {
     ownerResidenceCountry: string;
     ownerCitizenshipCountry: string;
     ownerHomeAddressDifferent: boolean;
+    ownerResidentialAddressLine1?: string;
+    ownerResidentialAddressLine2?: string;
+    ownerResidentialCity?: string;
+    ownerResidentialState?: string;
+    ownerResidentialPostalCode?: string;
+    ownerResidentialCountry?: string;
     ownerUsTaxId: string;
     ownerForeignTaxId: string;
     llcFormationCostUsdCents: number | null;
@@ -40,6 +46,11 @@ export type ParsedTaxFormRow = {
     totalWithdrawnFromLlcUsdCents: number | null;
     personalExpensesPaidByCompanyUsdCents: number | null;
     businessExpensesPaidPersonallyUsdCents: number | null;
+    fbarWithdrawalsTotalUsdCents: number | null;
+    fbarPersonalTransfersToLlcUsdCents: number | null;
+    fbarPersonalWithdrawalsFromLlcUsdCents: number | null;
+    fbarPersonalExpensesPaidByCompanyUsdCents: number | null;
+    fbarBusinessExpensesPaidPersonallyUsdCents: number | null;
     passportCopiesProvided: boolean;
     articlesOfOrganizationProvided: boolean;
     einLetterProvided: boolean;
@@ -120,6 +131,25 @@ const PROFILE_MAP: Record<string, string> = {
   owner_home_address_different: "ownerHomeAddressDifferent",
   owner_homeaddressdifferent: "ownerHomeAddressDifferent",
   tu_direccion_particular_es_diferente_a_la_de_tu_empresa: "ownerHomeAddressDifferent",
+  endereco_residencial_diferente_da_empresa: "ownerHomeAddressDifferent",
+  owner_residential_address_line1: "ownerResidentialAddressLine1",
+  endereco_residencial_linha_1: "ownerResidentialAddressLine1",
+  owner_residential_address_line2: "ownerResidentialAddressLine2",
+  endereco_residencial_linha_2: "ownerResidentialAddressLine2",
+  owner_residential_city: "ownerResidentialCity",
+  cidade_residencial: "ownerResidentialCity",
+  owner_residential_state: "ownerResidentialState",
+  estado_residencial: "ownerResidentialState",
+  owner_residential_postal_code: "ownerResidentialPostalCode",
+  cep_residencial: "ownerResidentialPostalCode",
+  owner_residential_country: "ownerResidentialCountry",
+  pais_residencial: "ownerResidentialCountry",
+  direccion_particular_si_es_diferente_a_la_del_negocio_direccion: "ownerResidentialAddressLine1",
+  direccion_particular_si_es_diferente_a_la_del_negocio_direccion_linea_2: "ownerResidentialAddressLine2",
+  direccion_particular_si_es_diferente_a_la_del_negocio_ciudad: "ownerResidentialCity",
+  direccion_particular_si_es_diferente_a_la_del_negocio_estado: "ownerResidentialState",
+  direccion_particular_si_es_diferente_a_la_del_negocio_codigo_postal: "ownerResidentialPostalCode",
+  direccion_particular_si_es_diferente_a_la_del_negocio_pais: "ownerResidentialCountry",
   owner_us_tax_id: "ownerUsTaxId",
   owner_ustaxid: "ownerUsTaxId",
   identificacion_fiscal_de_ee_uu_del_propietario_si_corresponde: "ownerUsTaxId",
@@ -135,20 +165,37 @@ const PROFILE_MAP: Record<string, string> = {
   total_assets_usd_cents: "totalAssetsUsdCents",
   total_assets: "totalAssetsUsdCents",
   activos_totales_del_negocio_hasta_el_31_de_diciembre: "totalAssetsUsdCents",
+  ativos_totais_ate_31_dez_usd: "totalAssetsUsdCents",
+  ativos_totais_da_empresa_ate_31_de_dezembro_usd: "totalAssetsUsdCents",
   has_us_bank_accounts: "hasUsBankAccounts",
   la_empresa_tiene_cuentas_bancarias_en_ee_uu_a_nombre_de_la_llc: "hasUsBankAccounts",
+  possui_contas_bancarias_nos_eua: "hasUsBankAccounts",
+  possui_contas_bancarias_nos_eua_em_nome_da_llc: "hasUsBankAccounts",
   aggregate_balance_over10k: "aggregateBalanceOver10k",
   el_saldo_agregado_mas_alto_de_todas_las_cuentas_supero_los_10000_usd_en_algun_momento_del_ano: "aggregateBalanceOver10k",
+  saldo_agregado_superior_a_us_10000_no_ano_fbar: "aggregateBalanceOver10k",
   total_withdrawals_usd_cents: "totalWithdrawalsUsdCents",
   total_de_retiros_durante_el_ultimo_ano_fiscal: "totalWithdrawalsUsdCents",
   total_transferred_to_llc_usd_cents: "totalTransferredToLlcUsdCents",
+  total_transferido_pessoalmente_para_llc_usd: "totalTransferredToLlcUsdCents",
   cantidad_total_de_dinero_que_transfirio_personalmente_a_la_llc: "totalTransferredToLlcUsdCents",
   total_withdrawn_from_llc_usd_cents: "totalWithdrawnFromLlcUsdCents",
+  total_retirado_pessoalmente_da_llc_usd: "totalWithdrawnFromLlcUsdCents",
   cantidad_total_de_dinero_que_retiro_personalmente_de_la_llc: "totalWithdrawnFromLlcUsdCents",
   personal_expenses_paid_by_company_usd_cents: "personalExpensesPaidByCompanyUsdCents",
+  despesas_pessoais_pagas_com_fundos_comerciais_usd: "personalExpensesPaidByCompanyUsdCents",
   monto_total_de_los_gastos_personales_que_pago_con_fondos_comerciales: "personalExpensesPaidByCompanyUsdCents",
   business_expenses_paid_personally_usd_cents: "businessExpensesPaidPersonallyUsdCents",
+  despesas_comerciais_pagas_com_fundos_pessoais_usd: "businessExpensesPaidPersonallyUsdCents",
   monto_total_de_los_gastos_comerciales_que_pago_con_fondos_personales: "businessExpensesPaidPersonallyUsdCents",
+  fbar_withdrawals_total_usd_cents: "fbarWithdrawalsTotalUsdCents",
+  total_retiradas_ultimo_ano_fiscal_usd: "fbarWithdrawalsTotalUsdCents",
+  fbar_personal_transfers_to_llc_usd_cents: "fbarPersonalTransfersToLlcUsdCents",
+  fbar_personal_withdrawals_from_llc_usd_cents: "fbarPersonalWithdrawalsFromLlcUsdCents",
+  fbar_personal_expenses_paid_by_company_usd_cents: "fbarPersonalExpensesPaidByCompanyUsdCents",
+  despesas_pessoais_pagas_com_fundos_da_empresa_usd: "fbarPersonalExpensesPaidByCompanyUsdCents",
+  fbar_business_expenses_paid_personally_usd_cents: "fbarBusinessExpensesPaidPersonallyUsdCents",
+  despesas_da_empresa_pagas_com_fundos_pessoais_usd: "fbarBusinessExpensesPaidPersonallyUsdCents",
   passport_copies_provided: "passportCopiesProvided",
   copia_de_pasaportes_de_los_socios: "passportCopiesProvided",
   articles_of_organization_provided: "articlesOfOrganizationProvided",
@@ -236,8 +283,13 @@ export function parseTaxFormRow(row: Record<string, string>): ParsedTaxFormRow |
       case "totalWithdrawnFromLlcUsdCents":
       case "personalExpensesPaidByCompanyUsdCents":
       case "businessExpensesPaidPersonallyUsdCents":
+      case "fbarWithdrawalsTotalUsdCents":
+      case "fbarPersonalTransfersToLlcUsdCents":
+      case "fbarPersonalWithdrawalsFromLlcUsdCents":
+      case "fbarPersonalExpensesPaidByCompanyUsdCents":
+      case "fbarBusinessExpensesPaidPersonallyUsdCents":
         const n = parseUsd(val);
-        if (n !== null) (taxProfile as Record<string, number | null>)[field] = n;
+        if (n !== null && n >= 0) (taxProfile as Record<string, number | null>)[field] = n;
         break;
       case "ownerFullLegalNameLast":
         taxProfile.ownerFullLegalName = [
@@ -324,6 +376,39 @@ export function parseTaxFormRow(row: Record<string, string>): ParsedTaxFormRow |
 
   if (!taxProfile.llcName && companyName) {
     taxProfile.llcName = companyName;
+  }
+  const hasResidentialData = !!(
+    taxProfile.ownerResidentialAddressLine1?.trim() ||
+    taxProfile.ownerResidentialAddressLine2?.trim() ||
+    taxProfile.ownerResidentialCity?.trim() ||
+    taxProfile.ownerResidentialState?.trim() ||
+    taxProfile.ownerResidentialPostalCode?.trim() ||
+    taxProfile.ownerResidentialCountry?.trim()
+  );
+  if (hasResidentialData && taxProfile.ownerHomeAddressDifferent !== false) {
+    taxProfile.ownerHomeAddressDifferent = true;
+  }
+  // Regra: se hasUsBankAccounts=false, aggregateBalanceOver10k deve ser false
+  if (taxProfile.hasUsBankAccounts === false) {
+    taxProfile.aggregateBalanceOver10k = false;
+  }
+  // Regra: se ownerHomeAddressDifferent=false, zerar os campos de endereço residencial
+  if (taxProfile.ownerHomeAddressDifferent !== true) {
+    taxProfile.ownerResidentialAddressLine1 = undefined;
+    taxProfile.ownerResidentialAddressLine2 = undefined;
+    taxProfile.ownerResidentialCity = undefined;
+    taxProfile.ownerResidentialState = undefined;
+    taxProfile.ownerResidentialPostalCode = undefined;
+    taxProfile.ownerResidentialCountry = undefined;
+  }
+  // Regra FBAR: se FBAR não aplicável, zerar os 5 campos FBAR
+  const fbarApplicable = taxProfile.hasUsBankAccounts === true && taxProfile.aggregateBalanceOver10k === true;
+  if (!fbarApplicable) {
+    taxProfile.fbarWithdrawalsTotalUsdCents = null;
+    taxProfile.fbarPersonalTransfersToLlcUsdCents = null;
+    taxProfile.fbarPersonalWithdrawalsFromLlcUsdCents = null;
+    taxProfile.fbarPersonalExpensesPaidByCompanyUsdCents = null;
+    taxProfile.fbarBusinessExpensesPaidPersonallyUsdCents = null;
   }
   return {
     client,

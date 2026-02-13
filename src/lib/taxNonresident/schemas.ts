@@ -18,7 +18,7 @@ function parseUsdToCents(s: string | number | undefined | null): number | null {
 
 export const usdCentsSchema = z
   .union([
-    z.number().int().min(0),
+    z.number().int().min(0, "Valor não pode ser negativo"),
     z.string().transform((s) => parseUsdToCents(s)),
   ])
   .nullable()
@@ -56,13 +56,18 @@ export const taxProfilePatchSchema = z.object({
   ownerResidenceCountry: z.string().optional(),
   ownerCitizenshipCountry: z.string().optional(),
   ownerHomeAddressDifferent: z.boolean().optional(),
+  ownerResidentialAddressLine1: z.string().max(500).optional(),
+  ownerResidentialAddressLine2: z.string().max(500).optional(),
+  ownerResidentialCity: z.string().max(200).optional(),
+  ownerResidentialState: z.string().max(100).optional(),
+  ownerResidentialPostalCode: z.string().max(50).optional(),
+  ownerResidentialCountry: z.string().max(100).optional(),
   ownerUsTaxId: z.string().optional(),
   ownerForeignTaxId: z.string().optional(),
   llcFormationCostUsdCents: usdCentsSchema,
   hasAdditionalOwners: z.boolean().optional(),
   totalAssetsUsdCents: usdCentsSchema,
   hasUsBankAccounts: z.boolean().optional(),
-  aggregateBalanceOver10k: z.boolean().optional(),
   totalWithdrawalsUsdCents: usdCentsSchema,
   totalTransferredToLlcUsdCents: usdCentsSchema,
   totalWithdrawnFromLlcUsdCents: usdCentsSchema,
@@ -75,6 +80,34 @@ export const taxProfilePatchSchema = z.object({
   additionalDocumentsNotes: z.string().max(2000).optional(),
   declarationAccepted: z.boolean().optional(),
   owners: z.array(taxOwnerSchema).optional(),
-});
+})
+  .refine(
+    (data) => {
+      if (data.ownerHomeAddressDifferent !== true) return true;
+      const line1 = data.ownerResidentialAddressLine1?.trim();
+      const city = data.ownerResidentialCity?.trim();
+      const state = data.ownerResidentialState?.trim();
+      const postal = data.ownerResidentialPostalCode?.trim();
+      const country = data.ownerResidentialCountry?.trim();
+      return !!(line1 && city && state && postal && country);
+    },
+    {
+      message: "Quando o endereço residencial é diferente, preencha Endereço, Cidade, Estado, Código postal e País",
+      path: ["ownerResidentialAddressLine1"],
+    }
+  )
+  .transform((data) => {
+    const out = { ...data };
+    // Se endereço residencial não aplicável, zerar os campos residential
+    if (out.ownerHomeAddressDifferent !== true) {
+      out.ownerResidentialAddressLine1 = undefined;
+      out.ownerResidentialAddressLine2 = undefined;
+      out.ownerResidentialCity = undefined;
+      out.ownerResidentialState = undefined;
+      out.ownerResidentialPostalCode = undefined;
+      out.ownerResidentialCountry = undefined;
+    }
+    return out;
+  });
 
 export type TaxProfilePatch = z.infer<typeof taxProfilePatchSchema>;

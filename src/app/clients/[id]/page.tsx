@@ -4,6 +4,7 @@ import { headers } from "next/headers";
 import { getBaseUrl } from "@/lib/api";
 import { ClientForm } from "@/components/ClientForm";
 import { ClientDeleteButton } from "./ClientDeleteButton";
+import { PdfPosVendaButton } from "@/components/PdfPosVendaButton";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -51,13 +52,14 @@ export default async function EditClientPage({ params }: PageProps) {
     <>
       <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
         <h1 className="text-2xl font-semibold text-gray-900">Editar cliente</h1>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <Link
             href="/clients"
             className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
           >
             Voltar
           </Link>
+          <PdfPosVendaButton clientId={id} />
           <ClientDeleteButton clientId={id} clientName={client.companyName} />
         </div>
       </div>

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, clientTaxProfile } from "@/db/schema";
-import { and, eq, isNull, sql, desc } from "drizzle-orm";
+import { clients, clientTaxProfile, clientTaxForms } from "@/db/schema";
+import { and, eq, isNull, sql, desc, notInArray } from "drizzle-orm";
 import { computeTaxStatus, computeTaxAlerts } from "@/lib/taxNonresident/rules";
 
 export async function GET(request: NextRequest) {
@@ -10,12 +10,13 @@ export async function GET(request: NextRequest) {
   const aggregateOver10k = searchParams.get("aggregateBalanceOver10k");
   const hasUsBankAccounts = searchParams.get("hasUsBankAccounts");
 
-  const conditions = [
+  // 1) Clientes do sync (Google Sheets)
+  const syncConditions = [
     isNull(clients.deletedAt),
     eq(clients.taxFormSource, "google_sheets_tax_form"),
   ];
 
-  const rows = await db
+  const syncRows = await db
     .select({
       clientId: clients.id,
       companyName: clients.companyName,
@@ -44,8 +45,95 @@ export async function GET(request: NextRequest) {
     })
     .from(clients)
     .leftJoin(clientTaxProfile, eq(clientTaxProfile.clientId, clients.id))
-    .where(and(...conditions))
+    .where(and(...syncConditions))
     .orderBy(desc(sql`COALESCE(${clientTaxProfile.updatedAt}, ${clients.updatedAt})`));
+
+  const syncClientIds = syncRows.map((r) => r.clientId);
+
+  // 2) Clientes com TAX forms manuais (client_tax_forms) que não estão no sync
+  const manualRows =
+    syncClientIds.length > 0
+      ? await db
+          .select({
+            clientId: clients.id,
+            companyName: clients.companyName,
+            customerCode: clients.customerCode,
+            updatedAt: clientTaxForms.updatedAt,
+            hasUsBankAccounts: clientTaxForms.hasUsBankAccounts,
+            aggregateBalanceOver10k: clientTaxForms.aggregateBalanceOver10k,
+            llcName: clientTaxForms.llcName,
+            formationDate: clientTaxForms.formationDate,
+            einNumber: clientTaxForms.einNumber,
+            passportCopiesProvided: clientTaxForms.passportCopiesProvided,
+            articlesOfOrganizationProvided: clientTaxForms.articlesOfOrganizationProvided,
+            declarationAccepted: clientTaxForms.declarationAccepted,
+            totalAssetsUsdCents: clientTaxForms.totalAssetsUsdCents,
+            ownerEmail: clientTaxForms.ownerEmail,
+            ownerFullLegalName: clientTaxForms.ownerFullLegalName,
+            ownerResidenceCountry: clientTaxForms.ownerResidenceCountry,
+            ownerCitizenshipCountry: clientTaxForms.ownerCitizenshipCountry,
+            ownerHomeAddressDifferent: clientTaxForms.ownerHomeAddressDifferent,
+            llcFormationCostUsdCents: clientTaxForms.llcFormationCostUsdCents,
+            llcUsAddressLine1: clientTaxForms.llcUsAddressLine1,
+            llcUsCity: clientTaxForms.llcUsCity,
+            llcUsState: clientTaxForms.llcUsState,
+            llcUsZip: clientTaxForms.llcUsZip,
+            activitiesDescription: clientTaxForms.activitiesDescription,
+          })
+          .from(clients)
+          .innerJoin(clientTaxForms, eq(clientTaxForms.clientId, clients.id))
+          .where(
+            and(
+              isNull(clients.deletedAt),
+              notInArray(clients.id, syncClientIds)
+            )
+          )
+      : await db
+          .select({
+            clientId: clients.id,
+            companyName: clients.companyName,
+            customerCode: clients.customerCode,
+            updatedAt: clientTaxForms.updatedAt,
+            hasUsBankAccounts: clientTaxForms.hasUsBankAccounts,
+            aggregateBalanceOver10k: clientTaxForms.aggregateBalanceOver10k,
+            llcName: clientTaxForms.llcName,
+            formationDate: clientTaxForms.formationDate,
+            einNumber: clientTaxForms.einNumber,
+            passportCopiesProvided: clientTaxForms.passportCopiesProvided,
+            articlesOfOrganizationProvided: clientTaxForms.articlesOfOrganizationProvided,
+            declarationAccepted: clientTaxForms.declarationAccepted,
+            totalAssetsUsdCents: clientTaxForms.totalAssetsUsdCents,
+            ownerEmail: clientTaxForms.ownerEmail,
+            ownerFullLegalName: clientTaxForms.ownerFullLegalName,
+            ownerResidenceCountry: clientTaxForms.ownerResidenceCountry,
+            ownerCitizenshipCountry: clientTaxForms.ownerCitizenshipCountry,
+            ownerHomeAddressDifferent: clientTaxForms.ownerHomeAddressDifferent,
+            llcFormationCostUsdCents: clientTaxForms.llcFormationCostUsdCents,
+            llcUsAddressLine1: clientTaxForms.llcUsAddressLine1,
+            llcUsCity: clientTaxForms.llcUsCity,
+            llcUsState: clientTaxForms.llcUsState,
+            llcUsZip: clientTaxForms.llcUsZip,
+            activitiesDescription: clientTaxForms.activitiesDescription,
+          })
+          .from(clients)
+          .innerJoin(clientTaxForms, eq(clientTaxForms.clientId, clients.id))
+          .where(isNull(clients.deletedAt));
+
+  // Deduplicar manual: um cliente pode ter vários forms; pegar o mais recente por cliente
+  const manualByClient = new Map<string, (typeof manualRows)[0]>();
+  for (const r of manualRows) {
+    const existing = manualByClient.get(r.clientId);
+    if (!existing || (r.updatedAt && (!existing.updatedAt || new Date(r.updatedAt) > new Date(existing.updatedAt)))) {
+      manualByClient.set(r.clientId, r);
+    }
+  }
+  const manualDeduped = Array.from(manualByClient.values());
+
+  const rows = [...syncRows, ...manualDeduped].sort((a, b) => {
+    const dateA = a.updatedAt ? new Date(a.updatedAt).getTime() : 0;
+    const dateB = b.updatedAt ? new Date(b.updatedAt).getTime() : 0;
+    return dateB - dateA;
+  });
 
   const list = rows.map((r) => {
     const profileData = r.clientId

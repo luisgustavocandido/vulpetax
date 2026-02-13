@@ -80,10 +80,23 @@ O mapper reconhece headers normalizados (trim, lowercase, sem acentos, espaços 
 | Owner Full Legal Name | ownerFullLegalName |
 | Owner Residence Country | ownerResidenceCountry |
 | Owner Citizenship Country | ownerCitizenshipCountry |
-| Total Assets, Total Assets USD | totalAssetsUsdCents |
-| Has US Bank Accounts | hasUsBankAccounts |
-| Aggregate Balance Over 10k | aggregateBalanceOver10k |
+| Total Assets, Ativos totais da empresa até 31 de dezembro, ativos_totais_ate_31_dez_usd | totalAssetsUsdCents |
+| Has US Bank Accounts, Possui contas bancárias nos EUA em nome da LLC, possui_contas_bancarias_nos_eua_em_nome_da_llc | hasUsBankAccounts (SIM/NÃO) |
+| Valor total transferido para LLC, total_transferido_pessoalmente_para_llc_usd | totalTransferredToLlcUsdCents |
+| Valor total retirado da LLC, total_retirado_pessoalmente_da_llc_usd | totalWithdrawnFromLlcUsdCents |
+| Despesas pessoais pagas com fundos comerciais, despesas_pessoais_pagas_com_fundos_comerciais_usd | personalExpensesPaidByCompanyUsdCents |
+| Despesas comerciais pagas com fundos pessoais, despesas_comerciais_pagas_com_fundos_pessoais_usd | businessExpensesPaidPersonallyUsdCents |
 | owner_2_email, owner_2_full_legal_name, ... | Sócios adicionais (2–5) |
+| Endereço residencial diferente, endereco_residencial_diferente_da_empresa | ownerHomeAddressDifferent |
+| Endereço residencial linha 1, endereco_residencial_linha_1 | ownerResidentialAddressLine1 |
+| Endereço residencial linha 2, endereco_residencial_linha_2 | ownerResidentialAddressLine2 |
+| Cidade residencial, cidade_residencial | ownerResidentialCity |
+| Estado residencial, estado_residencial | ownerResidentialState |
+| CEP residencial, cep_residencial | ownerResidentialPostalCode |
+| País residencial, pais_residencial | ownerResidentialCountry |
+| Dirección particular (Si es diferente...) - Dirección / Dirección (Línea 2) / Ciudad / Estado / Código Postal / País | ownerResidentialAddressLine1, Line2, City, State, PostalCode, Country |
+
+**Nota endereço residencial:** Os campos de endereço residencial só são persistidos quando `ownerHomeAddressDifferent` (endereço residencial diferente) é true. Caso contrário, são zerados. Se os campos de endereço residencial forem preenchidos mas a pergunta "é diferente?" não estiver na planilha, o sistema infere automaticamente `ownerHomeAddressDifferent = true`.
 
 ## 7. Comportamento
 

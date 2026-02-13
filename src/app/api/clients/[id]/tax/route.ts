@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { db } from "@/db";
-import { clients, clientTaxProfile, clientTaxOwners } from "@/db/schema";
+import { clients, clientTaxProfile, clientTaxOwners, clientTaxForms } from "@/db/schema";
 import { eq, asc } from "drizzle-orm";
 import { getRequestMeta } from "@/lib/requestMeta";
 import { logAudit, diffChangedFields } from "@/lib/audit";
@@ -90,22 +90,38 @@ export async function PATCH(
   }
 
   const profileValues: Record<string, unknown> = {};
+  const effectiveData = data;
+  const residentialApplicable = effectiveData.ownerHomeAddressDifferent === true;
   const profileFields = [
     "llcName", "formationDate", "activitiesDescription", "einNumber",
     "llcUsAddressLine1", "llcUsAddressLine2", "llcUsCity", "llcUsState", "llcUsZip",
     "ownerEmail", "ownerFullLegalName", "ownerResidenceCountry", "ownerCitizenshipCountry",
-    "ownerHomeAddressDifferent", "ownerUsTaxId", "ownerForeignTaxId", "llcFormationCostUsdCents",
-    "hasAdditionalOwners", "totalAssetsUsdCents", "hasUsBankAccounts", "aggregateBalanceOver10k",
+    "ownerHomeAddressDifferent",
+    "ownerResidentialAddressLine1", "ownerResidentialAddressLine2", "ownerResidentialCity",
+    "ownerResidentialState", "ownerResidentialPostalCode", "ownerResidentialCountry",
+    "ownerUsTaxId", "ownerForeignTaxId", "llcFormationCostUsdCents",
+    "hasAdditionalOwners", "totalAssetsUsdCents", "hasUsBankAccounts",
     "totalWithdrawalsUsdCents", "totalTransferredToLlcUsdCents", "totalWithdrawnFromLlcUsdCents",
     "personalExpensesPaidByCompanyUsdCents", "businessExpensesPaidPersonallyUsdCents",
     "passportCopiesProvided", "articlesOfOrganizationProvided", "einLetterProvided",
     "additionalDocumentsProvided", "additionalDocumentsNotes", "declarationAccepted",
   ];
   for (const f of profileFields) {
-    const v = (data as Record<string, unknown>)[f];
+    let v = (effectiveData as Record<string, unknown>)[f];
+    if (f.startsWith("ownerResidential") && !residentialApplicable) {
+      v = null;
+    }
     if (v !== undefined) profileValues[f] = v;
   }
-  if (data.declarationAccepted === true && Object.keys(profileValues).includes("declarationAccepted")) {
+  if (!residentialApplicable) {
+    profileValues.ownerResidentialAddressLine1 = null;
+    profileValues.ownerResidentialAddressLine2 = null;
+    profileValues.ownerResidentialCity = null;
+    profileValues.ownerResidentialState = null;
+    profileValues.ownerResidentialPostalCode = null;
+    profileValues.ownerResidentialCountry = null;
+  }
+  if (effectiveData.declarationAccepted === true && Object.keys(profileValues).includes("declarationAccepted")) {
     profileValues.declarationAcceptedAt = new Date();
   }
   profileValues.updatedAt = new Date();
@@ -156,9 +172,9 @@ export async function PATCH(
       }
     }
 
-    if (data.owners !== undefined) {
+    if (effectiveData.owners !== undefined) {
       await tx.delete(clientTaxOwners).where(eq(clientTaxOwners.clientId, id));
-      for (const o of data.owners) {
+      for (const o of effectiveData.owners) {
         await tx.insert(clientTaxOwners).values({
           clientId: id,
           ownerIndex: o.ownerIndex,
@@ -171,13 +187,13 @@ export async function PATCH(
           foreignTaxId: o.foreignTaxId ?? null,
         });
       }
-      if (data.owners.length > 0) {
+      if (effectiveData.owners.length > 0) {
         await logAudit(tx, {
           action: "update",
           entity: "client_tax_owners",
           entityId: id,
           oldValues: { count: 0 },
-          newValues: { count: data.owners.length },
+          newValues: { count: effectiveData.owners.length },
           meta,
         });
       }
@@ -243,13 +259,19 @@ export async function DELETE(
     .where(eq(clientTaxProfile.clientId, id))
     .limit(1);
 
+  const existingForms = await db
+    .select({ id: clientTaxForms.id })
+    .from(clientTaxForms)
+    .where(eq(clientTaxForms.clientId, id));
+  const hasForms = existingForms.length > 0;
+
   const owners = await db
     .select()
     .from(clientTaxOwners)
     .where(eq(clientTaxOwners.clientId, id))
     .orderBy(asc(clientTaxOwners.ownerIndex));
 
-  if (!profile) {
+  if (!profile && !hasForms) {
     return NextResponse.json({ ok: true, removed: false });
   }
 
@@ -261,6 +283,7 @@ export async function DELETE(
   await db.transaction(async (tx) => {
     await tx.delete(clientTaxOwners).where(eq(clientTaxOwners.clientId, id));
     await tx.delete(clientTaxProfile).where(eq(clientTaxProfile.clientId, id));
+    await tx.delete(clientTaxForms).where(eq(clientTaxForms.clientId, id));
     await tx
       .update(clients)
       .set({
@@ -270,31 +293,41 @@ export async function DELETE(
       })
       .where(eq(clients.id, id));
 
-    const oldValues = {
-      clientId: id,
-      customerCode: client.customerCode,
-      companyName: client.companyName,
-      statusAnterior: status,
-      hasFBAR: profile.aggregateBalanceOver10k ?? false,
-      updatedAt: profile.updatedAt?.toISOString() ?? null,
-      ownersCount: owners.length,
-    };
-
-    await logAudit(tx, {
-      action: "delete",
-      entity: "client_tax_profile",
-      entityId: id,
-      oldValues,
-      newValues: null,
-      meta,
-    });
-
-    if (owners.length > 0) {
+    if (profile) {
+      const oldValues = {
+        clientId: id,
+        customerCode: client.customerCode,
+        companyName: client.companyName,
+        statusAnterior: status,
+        hasFBAR: profile.aggregateBalanceOver10k ?? false,
+        updatedAt: profile.updatedAt?.toISOString() ?? null,
+        ownersCount: owners.length,
+      };
       await logAudit(tx, {
         action: "delete",
-        entity: "client_tax_owners",
+        entity: "client_tax_profile",
         entityId: id,
-        oldValues: { clientId: id, count: owners.length },
+        oldValues,
+        newValues: null,
+        meta,
+      });
+      if (owners.length > 0) {
+        await logAudit(tx, {
+          action: "delete",
+          entity: "client_tax_owners",
+          entityId: id,
+          oldValues: { clientId: id, count: owners.length },
+          newValues: null,
+          meta,
+        });
+      }
+    }
+    if (hasForms) {
+      await logAudit(tx, {
+        action: "delete",
+        entity: "client_tax_forms",
+        entityId: id,
+        oldValues: { clientId: id },
         newValues: null,
         meta,
       });

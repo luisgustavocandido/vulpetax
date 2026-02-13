@@ -383,6 +383,12 @@ export async function applyTaxFormSync(
           "ownerResidenceCountry",
           "ownerCitizenshipCountry",
           "ownerHomeAddressDifferent",
+          "ownerResidentialAddressLine1",
+          "ownerResidentialAddressLine2",
+          "ownerResidentialCity",
+          "ownerResidentialState",
+          "ownerResidentialPostalCode",
+          "ownerResidentialCountry",
           "ownerUsTaxId",
           "ownerForeignTaxId",
           "llcFormationCostUsdCents",
@@ -402,9 +408,19 @@ export async function applyTaxFormSync(
           "additionalDocumentsNotes",
           "declarationAccepted",
         ];
+        const residentialApplicable = profileData.ownerHomeAddressDifferent === true;
         for (const f of profileFields) {
-          const v = (profileData as Record<string, unknown>)[f];
+          let v = (profileData as Record<string, unknown>)[f];
+          if (f.startsWith("ownerResidential") && !residentialApplicable) v = null;
           if (v !== undefined) profileValues[f] = v;
+        }
+        if (!residentialApplicable) {
+          profileValues.ownerResidentialAddressLine1 = null;
+          profileValues.ownerResidentialAddressLine2 = null;
+          profileValues.ownerResidentialCity = null;
+          profileValues.ownerResidentialState = null;
+          profileValues.ownerResidentialPostalCode = null;
+          profileValues.ownerResidentialCountry = null;
         }
         if (profileValues.formationDate && typeof profileValues.formationDate === "string") {
           profileValues.formationDate =

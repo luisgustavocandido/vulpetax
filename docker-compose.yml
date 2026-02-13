@@ -3,6 +3,14 @@
 # DATABASE_URL deve usar o mesmo user, password e db (ex.: postgresql://user:password@localhost:5432/vulpetax)
 
 services:
+  gotenberg:
+    image: gotenberg/gotenberg:8
+    container_name: vulpetax-gotenberg
+    restart: unless-stopped
+    ports:
+      - "3001:3000"
+    command: ["gotenberg", "--api-timeout=60s"]
+
   postgres:
     image: postgres:16-alpine
     container_name: vulpetax-postgres
