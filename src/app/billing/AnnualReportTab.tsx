@@ -3,18 +3,19 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { getStateByCode, US_STATES } from "@/constants/usStates";
+import { AnnualReportCompanyModal } from "./AnnualReportCompanyModal";
 
-type AnnualReportRow = {
-  id: string;
+type CompanyRow = {
   clientId: string;
-  llcState: string;
-  frequency: string;
-  periodYear: number;
-  dueDate: string;
-  status: string;
-  doneAt: string | null;
-  notes: string | null;
   companyName: string | null;
+  states: string[];
+  counts: {
+    pending: number;
+    overdue: number;
+    done: number;
+    canceled: number;
+  };
+  nextDueDate: string | null;
 };
 
 type Meta = {
@@ -35,30 +36,19 @@ function formatDate(s: string | null): string {
   return `${d}/${m}/${y}`;
 }
 
-function statusLabel(s: string): string {
-  if (s === "done") return "Concluído";
-  if (s === "canceled") return "Cancelado";
-  if (s === "overdue") return "Atrasado";
-  if (s === "pending") return "Pendente";
-  return s;
-}
-
-function statusClass(s: string): string {
-  if (s === "done") return "bg-green-100 text-green-800";
-  if (s === "canceled") return "bg-slate-100 text-slate-600";
-  if (s === "overdue") return "bg-red-100 text-red-800";
-  return "bg-amber-100 text-amber-800";
-}
-
 export function AnnualReportTab() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const [data, setData] = useState<{ data: AnnualReportRow[]; meta: Meta } | null>(null);
+  const [data, setData] = useState<{ data: CompanyRow[]; meta: Meta } | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [toast, setToast] = useState<{ type: "success" | "error"; message: string } | null>(null);
   const qRef = useRef<string>("");
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Modal state
+  const [modalOpen, setModalOpen] = useState(false);
+  const [selectedCompany, setSelectedCompany] = useState<{ clientId: string; companyName: string | null } | null>(null);
 
   const status = searchParams.get("arStatus") ?? "pending,overdue";
   const frequency = searchParams.get("arFrequency") ?? "";
@@ -71,7 +61,7 @@ export function AnnualReportTab() {
   const page = Math.max(1, Number(searchParams.get("arPage")) || 1);
   const limit = Math.max(1, Math.min(100, Number(searchParams.get("arLimit")) || 20));
 
-  const fetchReports = useCallback(async () => {
+  const fetchCompanies = useCallback(async () => {
     setLoading(true);
     setError(null);
     const params = new URLSearchParams();
@@ -87,7 +77,7 @@ export function AnnualReportTab() {
     params.set("limit", String(limit));
     params.set("windowMonths", "12");
     try {
-      const res = await fetch(`/api/billing/annual-reports?${params.toString()}`);
+      const res = await fetch(`/api/billing/annual-reports/companies?${params.toString()}`);
       if (!res.ok) {
         const j = await res.json().catch(() => ({}));
         throw new Error(j.error ?? "Erro ao carregar");
@@ -103,7 +93,7 @@ export function AnnualReportTab() {
         },
       });
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Erro ao carregar obrigações");
+      setError(e instanceof Error ? e.message : "Erro ao carregar empresas");
       setData(null);
     } finally {
       setLoading(false);
@@ -112,8 +102,8 @@ export function AnnualReportTab() {
 
   useEffect(() => {
     qRef.current = qParam;
-    fetchReports();
-  }, [fetchReports, qParam]);
+    fetchCompanies();
+  }, [fetchCompanies, qParam]);
 
   const debouncedSetQuery = useCallback((value: string) => {
     if (debounceRef.current) clearTimeout(debounceRef.current);
@@ -127,65 +117,28 @@ export function AnnualReportTab() {
     }, 300);
   }, [router, searchParams]);
 
-  async function handleMarkDone(id: string) {
-    try {
-      const res = await fetch(`/api/billing/annual-reports/${id}/done`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Falha ao marcar como concluído");
-      setToast({ type: "success", message: "Obrigação marcada como concluída." });
-      fetchReports();
-      router.refresh();
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Erro" });
-    }
-  }
-
-  async function handleCancel(id: string) {
-    if (!confirm("Cancelar esta obrigação?")) return;
-    try {
-      const res = await fetch(`/api/billing/annual-reports/${id}/cancel`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({}),
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Falha ao cancelar");
-      setToast({ type: "success", message: "Obrigação cancelada." });
-      fetchReports();
-      router.refresh();
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Erro" });
-    }
-  }
-
-  async function handleReopen(id: string) {
-    if (!confirm("Reabrir esta obrigação?")) return;
-    try {
-      const res = await fetch(`/api/billing/annual-reports/${id}/reopen`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-      });
-      const j = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(j.error ?? "Falha ao reabrir");
-      setToast({ type: "success", message: "Obrigação reaberta." });
-      fetchReports();
-      router.refresh();
-    } catch (e) {
-      setToast({ type: "error", message: e instanceof Error ? e.message : "Erro" });
-    }
-  }
-
   function handleRefresh() {
-    fetchReports();
+    fetchCompanies();
     setToast({ type: "success", message: "Lista atualizada." });
   }
 
+  function openModal(company: CompanyRow) {
+    setSelectedCompany({ clientId: company.clientId, companyName: company.companyName });
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setSelectedCompany(null);
+  }
+
+  function handleModalActionComplete() {
+    fetchCompanies();
+    setToast({ type: "success", message: "Status atualizado." });
+  }
+
   const meta = data?.meta;
-  const reports = data?.data ?? [];
+  const companies = data?.data ?? [];
   const totalPages = meta ? Math.ceil(meta.total / meta.limit) : 0;
 
   useEffect(() => {
@@ -211,7 +164,7 @@ export function AnnualReportTab() {
           {error}
           <button
             type="button"
-            onClick={() => { setError(null); fetchReports(); }}
+            onClick={() => { setError(null); fetchCompanies(); }}
             className="ml-2 font-medium underline"
           >
             Tentar novamente
@@ -392,9 +345,9 @@ export function AnnualReportTab() {
             <div key={i} className="h-10 rounded bg-slate-200" />
           ))}
         </div>
-      ) : reports.length === 0 ? (
+      ) : companies.length === 0 ? (
         <div className="rounded-lg border border-slate-200 bg-slate-50/50 p-8 text-center text-slate-600">
-          Nenhuma obrigação de Annual Report encontrada. Ajuste os filtros ou verifique se os clientes têm LLC cadastrada com estado válido.
+          Nenhuma empresa com Annual Report encontrada. Ajuste os filtros ou verifique se os clientes têm LLC cadastrada com estado válido.
         </div>
       ) : (
         <>
@@ -404,60 +357,83 @@ export function AnnualReportTab() {
                 <thead className="bg-slate-50">
                   <tr>
                     <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Empresa</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Estado</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Frequência</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Ano</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Vencimento</th>
-                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Status</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Estados</th>
+                    <th className="px-4 py-3 text-left text-xs font-medium uppercase text-slate-500">Próx. Vencimento</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium uppercase text-slate-500">Pendentes</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium uppercase text-slate-500">Atrasados</th>
+                    <th className="px-4 py-3 text-center text-xs font-medium uppercase text-slate-500">Concluídos</th>
                     <th className="px-4 py-3 text-right text-xs font-medium uppercase text-slate-500">Ações</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200 bg-white">
-                  {reports.map((row) => {
-                    const state = getStateByCode(row.llcState);
-                    const stateName = state ? `${state.name} (${row.llcState})` : row.llcState;
+                  {companies.map((company) => {
+                    const hasOverdue = company.counts.overdue > 0;
                     return (
-                      <tr key={row.id} className="hover:bg-slate-50">
-                        <td className="px-4 py-3 text-sm text-slate-900">{row.companyName ?? "—"}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{stateName}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{row.frequency}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{row.periodYear}</td>
-                        <td className="px-4 py-3 text-sm text-slate-600">{formatDate(row.dueDate)}</td>
+                      <tr
+                        key={company.clientId}
+                        className={`hover:bg-slate-50 cursor-pointer ${hasOverdue ? "bg-red-50/30" : ""}`}
+                        onClick={() => openModal(company)}
+                      >
+                        <td className="px-4 py-3 text-sm font-medium text-slate-900">
+                          {company.companyName ?? "—"}
+                        </td>
                         <td className="px-4 py-3">
-                          <span className={`inline-flex rounded-full px-2 py-1 text-xs font-medium ${statusClass(row.status)}`}>
-                            {statusLabel(row.status)}
-                          </span>
+                          <div className="flex flex-wrap gap-1">
+                            {company.states.map((s) => {
+                              const stateInfo = getStateByCode(s);
+                              return (
+                                <span
+                                  key={s}
+                                  className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"
+                                  title={stateInfo?.name ?? s}
+                                >
+                                  {s}
+                                </span>
+                              );
+                            })}
+                          </div>
+                        </td>
+                        <td className="px-4 py-3 text-sm text-slate-600">
+                          {formatDate(company.nextDueDate)}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {company.counts.pending > 0 ? (
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                              {company.counts.pending}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {company.counts.overdue > 0 ? (
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                              {company.counts.overdue}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
+                        </td>
+                        <td className="px-4 py-3 text-center">
+                          {company.counts.done > 0 ? (
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                              {company.counts.done}
+                            </span>
+                          ) : (
+                            <span className="text-slate-300">—</span>
+                          )}
                         </td>
                         <td className="px-4 py-3 text-right">
-                          <div className="flex justify-end gap-2">
-                            {row.status !== "done" && row.status !== "canceled" && (
-                              <button
-                                type="button"
-                                onClick={() => handleMarkDone(row.id)}
-                                className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
-                              >
-                                Concluir
-                              </button>
-                            )}
-                            {row.status !== "canceled" && (
-                              <button
-                                type="button"
-                                onClick={() => handleCancel(row.id)}
-                                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
-                                Cancelar
-                              </button>
-                            )}
-                            {(row.status === "done" || row.status === "canceled") && (
-                              <button
-                                type="button"
-                                onClick={() => handleReopen(row.id)}
-                                className="rounded-md border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-50"
-                              >
-                                Reabrir
-                              </button>
-                            )}
-                          </div>
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openModal(company);
+                            }}
+                            className="rounded-md bg-blue-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-blue-700"
+                          >
+                            Ver anos
+                          </button>
                         </td>
                       </tr>
                     );
@@ -470,7 +446,7 @@ export function AnnualReportTab() {
           {totalPages > 1 && meta && (
             <div className="flex items-center justify-between">
               <p className="text-sm text-slate-600">
-                Página {meta.page} de {totalPages} ({meta.total} total)
+                Página {meta.page} de {totalPages} ({meta.total} empresas)
               </p>
               <div className="flex gap-2">
                 <button
@@ -501,6 +477,17 @@ export function AnnualReportTab() {
             </div>
           )}
         </>
+      )}
+
+      {/* Modal de detalhes por empresa */}
+      {selectedCompany && (
+        <AnnualReportCompanyModal
+          clientId={selectedCompany.clientId}
+          companyName={selectedCompany.companyName}
+          isOpen={modalOpen}
+          onClose={closeModal}
+          onActionComplete={handleModalActionComplete}
+        />
       )}
     </div>
   );
