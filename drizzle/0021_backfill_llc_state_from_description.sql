@@ -1,0 +1,63 @@
+-- Migração: Backfill llc_state a partir do campo description
+-- O campo description contém o estado no formato "Wyoming · Gold", "Florida · Gold", etc.
+
+-- Extrair o estado do description e atualizar llc_state
+UPDATE client_line_items
+SET llc_state = CASE
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%alabama%' THEN 'AL'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%alaska%' THEN 'AK'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%arizona%' THEN 'AZ'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%arkansas%' THEN 'AR'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%california%' THEN 'CA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%colorado%' THEN 'CO'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%connecticut%' THEN 'CT'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%delaware%' THEN 'DE'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%florida%' THEN 'FL'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%georgia%' THEN 'GA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%hawaii%' THEN 'HI'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%idaho%' THEN 'ID'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%illinois%' THEN 'IL'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%indiana%' THEN 'IN'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%iowa%' THEN 'IA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%kansas%' THEN 'KS'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%kentucky%' THEN 'KY'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%louisiana%' THEN 'LA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%maine%' THEN 'ME'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%maryland%' THEN 'MD'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%massachusetts%' THEN 'MA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%michigan%' THEN 'MI'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%minnesota%' THEN 'MN'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%mississippi%' THEN 'MS'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%missouri%' THEN 'MO'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%montana%' THEN 'MT'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%nebraska%' THEN 'NE'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%nevada%' THEN 'NV'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%new hampshire%' THEN 'NH'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%new jersey%' THEN 'NJ'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%new mexico%' THEN 'NM'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%new york%' THEN 'NY'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%north carolina%' THEN 'NC'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%north dakota%' THEN 'ND'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%ohio%' THEN 'OH'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%oklahoma%' THEN 'OK'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%oregon%' THEN 'OR'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%pennsylvania%' THEN 'PA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%rhode island%' THEN 'RI'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%south carolina%' THEN 'SC'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%south dakota%' THEN 'SD'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%tennessee%' THEN 'TN'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%texas%' THEN 'TX'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%utah%' THEN 'UT'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%vermont%' THEN 'VT'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%virginia%' AND LOWER(SPLIT_PART(description, '·', 1)) NOT LIKE '%west virginia%' THEN 'VA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%washington%' AND LOWER(SPLIT_PART(description, '·', 1)) NOT LIKE '%washington dc%' THEN 'WA'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%west virginia%' THEN 'WV'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%wisconsin%' THEN 'WI'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%wyoming%' THEN 'WY'
+  WHEN LOWER(SPLIT_PART(description, '·', 1)) LIKE '%washington dc%' THEN 'DC'
+  ELSE NULL
+END
+WHERE LOWER(kind) = 'llc'
+  AND (llc_state IS NULL OR llc_state = '')
+  AND description IS NOT NULL
+  AND description LIKE '%·%';
