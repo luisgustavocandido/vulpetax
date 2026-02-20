@@ -8,7 +8,6 @@ import {
   clientPartners,
   type ClientInsert,
   type CommercialSdr,
-  type LineItemKind,
   type PartnerRole,
 } from "@/db/schema";
 import { isNull } from "drizzle-orm";
@@ -22,8 +21,17 @@ import {
   normalizeCompanyName,
   resolveNameDuplicates,
 } from "@/lib/clientDedupe";
+import { normalizeLineItemForDb } from "@/lib/normalizeLineItemForDb";
+import { normalizeLegacyToLineItemInputArray } from "@/types/lineItems";
 
 const COMMERCIAL_VALUES = ["João", "Pablo", "Gabriel", "Gustavo"] as const;
+
+function dateToIso(value: unknown): string | null {
+  if (value == null) return null;
+  if (typeof value === "string") return value.slice(0, 10);
+  if (value instanceof Date) return value.toISOString().slice(0, 10);
+  return null;
+}
 
 export async function GET(request: NextRequest) {
   try {
@@ -165,8 +173,23 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const body = await request.json();
-  const parsed = createClientSchema.safeParse(body);
+  const body = (await request.json()) as Record<string, unknown>;
+  const hasLineItems = body.lineItems !== undefined;
+  const hasItems = body.items !== undefined;
+  if (hasLineItems && hasItems && process.env.NODE_ENV === "development") {
+    console.warn("[POST /api/clients] both lineItems and items present, using lineItems");
+  }
+  const incomingRaw = body.lineItems ?? body.items ?? [];
+  const normalized = normalizeLegacyToLineItemInputArray(incomingRaw);
+  if (!normalized.ok) {
+    return NextResponse.json(
+      { error: normalized.error },
+      { status: normalized.status ?? 400 }
+    );
+  }
+  const bodyForSchema = { ...body, lineItems: normalized.items } as Record<string, unknown>;
+  delete bodyForSchema.items;
+  const parsed = createClientSchema.safeParse(bodyForSchema);
   if (!parsed.success) {
     return NextResponse.json(
       { error: "Dados inválidos", details: parsed.error.flatten() },
@@ -216,16 +239,25 @@ export async function POST(request: NextRequest) {
         await tx.update(clients).set(clientUpdates).where(eq(clients.id, winnerId));
 
         await tx.delete(clientLineItems).where(eq(clientLineItems.clientId, winnerId));
-        for (const item of data.items ?? []) {
+        for (const item of data.lineItems ?? []) {
+          const norm = normalizeLineItemForDb(item);
           await tx.insert(clientLineItems).values({
             clientId: winnerId,
-            kind: item.kind as LineItemKind,
-            description: item.description,
-            valueCents: item.valueCents,
-            saleDate: item.saleDate ?? null,
-            commercial: (item.commercial as CommercialSdr) ?? null,
-            sdr: (item.sdr as CommercialSdr) ?? null,
-            meta: item.meta ?? null,
+            kind: norm.kind,
+            description: norm.description,
+            valueCents: norm.valueCents,
+            saleDate: norm.saleDate,
+            billingPeriod: norm.billingPeriod,
+            expirationDate: norm.expirationDate,
+            commercial: norm.commercial,
+            sdr: norm.sdr,
+            addressProvider: norm.addressProvider,
+            addressLine1: norm.addressLine1,
+            addressLine2: norm.addressLine2,
+            steNumber: norm.steNumber,
+            llcCategory: norm.llcCategory,
+            llcState: norm.llcState,
+            llcCustomCategory: norm.llcCustomCategory,
           });
         }
 
@@ -290,16 +322,25 @@ export async function POST(request: NextRequest) {
       const [row] = await tx.insert(clients).values(clientValues).returning({ id: clients.id });
       if (!row) throw new Error("Insert failed");
 
-      for (const item of data.items ?? []) {
+      for (const item of data.lineItems ?? []) {
+        const norm = normalizeLineItemForDb(item);
         await tx.insert(clientLineItems).values({
           clientId: row.id,
-          kind: item.kind as LineItemKind,
-          description: item.description,
-          valueCents: item.valueCents,
-          saleDate: item.saleDate ?? null,
-          commercial: (item.commercial as CommercialSdr) ?? null,
-          sdr: (item.sdr as CommercialSdr) ?? null,
-          meta: item.meta ?? null,
+          kind: norm.kind,
+          description: norm.description,
+          valueCents: norm.valueCents,
+          saleDate: norm.saleDate,
+          billingPeriod: norm.billingPeriod,
+          expirationDate: norm.expirationDate,
+          commercial: norm.commercial,
+          sdr: norm.sdr,
+          addressProvider: norm.addressProvider,
+          addressLine1: norm.addressLine1,
+          addressLine2: norm.addressLine2,
+          steNumber: norm.steNumber,
+          llcCategory: norm.llcCategory,
+          llcState: norm.llcState,
+          llcCustomCategory: norm.llcCustomCategory,
         });
       }
 
@@ -347,5 +388,50 @@ export async function POST(request: NextRequest) {
     throw err;
   }
 
-  return NextResponse.json(result, { status: 201 });
+  const clientId = result.id;
+  const [clientRow] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
+  const lineItemsRows = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, clientId));
+  const partnersRows = await db.select().from(clientPartners).where(eq(clientPartners.clientId, clientId));
+
+  const lineItemsPayload = lineItemsRows.map((i) => ({
+    id: i.id,
+    kind: i.kind,
+    description: i.description,
+    valueCents: i.valueCents,
+    saleDate: dateToIso(i.saleDate),
+    billingPeriod: i.billingPeriod ?? null,
+    expirationDate: dateToIso(i.expirationDate),
+    commercial: i.commercial ?? null,
+    sdr: i.sdr ?? null,
+    addressProvider: i.addressProvider ?? null,
+    addressLine1: i.addressLine1 ?? null,
+    addressLine2: i.addressLine2 ?? null,
+    steNumber: i.steNumber ?? null,
+    llcCategory: i.llcCategory ?? null,
+    llcState: i.llcState ?? null,
+    llcCustomCategory: i.llcCustomCategory ?? null,
+  }));
+  const client = clientRow
+    ? {
+        ...clientRow,
+        lineItems: lineItemsPayload,
+        items: lineItemsPayload,
+        partners: partnersRows.map((p) => ({
+          id: p.id,
+          fullName: p.fullName,
+          role: p.role,
+          percentage: p.percentageBasisPoints / 100,
+          phone: p.phone,
+          email: p.email ?? undefined,
+          addressLine1: p.addressLine1 ?? undefined,
+          addressLine2: p.addressLine2 ?? undefined,
+          city: p.city ?? undefined,
+          state: p.state ?? undefined,
+          postalCode: p.postalCode ?? undefined,
+          country: p.country ?? undefined,
+        })),
+      }
+    : null;
+
+  return NextResponse.json({ client: client ?? undefined, id: clientId, created: result.created, deduped: result.deduped }, { status: 201 });
 }

@@ -1,6 +1,13 @@
+"use client";
+
 import Link from "next/link";
-import { formatUSD } from "@/lib/dashboardQueries";
-import type { TopCompany } from "@/lib/dashboardQueries";
+import { formatUSD } from "@/lib/dashboardFilters";
+
+export type TopCompany = {
+  companyName: string;
+  customerCode: string;
+  totalCents: number;
+};
 
 type Props = {
   companies: TopCompany[];

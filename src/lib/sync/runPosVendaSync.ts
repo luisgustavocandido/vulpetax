@@ -512,6 +512,8 @@ export async function applyPosVendaSync(
               description: it.description,
               valueCents: it.valueCents,
               meta: it.meta ?? null,
+              billingPeriod: it.kind === "Endereco" ? "Mensal" : null,
+              expirationDate: null,
             });
           }
         }

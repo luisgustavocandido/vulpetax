@@ -121,9 +121,10 @@ src/assets/templates/pos-venda-llc-template.docx
 | `<<flag_afiliado>>` | clients.affiliate (Sim/Não) |
 | `<<flag_express>>` | clients.express (Sim/Não) |
 | `<<observacao>>` | clients.notes |
-| `<<item_N_tipo>>` .. `<<item_N_sdr>>` | client_line_items (N=1..5) |
+| `<<item_N_tipo>>` .. `<<item_N_sdr>>` | client_line_items (N=1..5); **ordem fixa por tipo** |
 | `<<socio_N_nome>>` .. `<<socio_N_pct>>` | client_partners (N=1..5) |
 
+- **Itens 1–5 (tabela Descrição \| Valor):** ordem fixa — #1 LLC, #2 Endereço, #3 Gateway, #4 Serviço Adicional, #5 Banco Tradicional. Cada slot usa o primeiro line item do cliente com aquele `kind`; descrição formatada com rótulo (ex.: "LLC: …", "Endereço: provedor, endereço · periodicidade"). Sem item = "—" no valor.
 - Campos vazios: preenchidos com `—`
 - Flags: `"Sim"` / `"Não"`
 - Valores: USD com 2 casas decimais

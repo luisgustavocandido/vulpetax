@@ -181,6 +181,8 @@ export async function POST(request: NextRequest) {
                 kind: it.kind as LineItemKind,
                 description: it.description,
                 valueCents: it.valueCents,
+              billingPeriod: null,
+              expirationDate: null,
               });
             }
             return;
@@ -232,6 +234,8 @@ export async function POST(request: NextRequest) {
               kind: it.kind as LineItemKind,
               description: it.description,
               valueCents: it.valueCents,
+              billingPeriod: null,
+              expirationDate: null,
             });
           }
         });

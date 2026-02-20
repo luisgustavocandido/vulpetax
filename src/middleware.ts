@@ -31,6 +31,8 @@ export async function middleware(request: NextRequest) {
       pathname.startsWith("/clients/") ||
       pathname === "/dashboard" ||
       pathname.startsWith("/dashboard/") ||
+      pathname === "/billing" ||
+      pathname.startsWith("/billing/") ||
       pathname === "/tax" ||
       pathname.startsWith("/tax/")
     ) {
@@ -71,9 +73,11 @@ export async function middleware(request: NextRequest) {
     pathname === "/dashboard" || pathname.startsWith("/dashboard/");
   const isProtectedTax =
     pathname === "/tax" || pathname.startsWith("/tax/");
+  const isProtectedBilling =
+    pathname === "/billing" || pathname.startsWith("/billing/");
   const isApi = pathname.startsWith("/api/");
 
-  if (isProtectedClients || isProtectedDashboard || isProtectedTax || isApi) {
+  if (isProtectedClients || isProtectedDashboard || isProtectedTax || isProtectedBilling || isApi) {
     if (!session) {
       if (isApi) {
         return NextResponse.json(
@@ -88,13 +92,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const res = NextResponse.next();
-  if (isProtectedClients || isProtectedDashboard || isProtectedTax) {
+  if (isProtectedClients || isProtectedDashboard || isProtectedTax || isProtectedBilling) {
     res.headers.set("Cache-Control", "no-store");
   }
   return res;
 }
 
 export const config = {
-  matcher: ["/login", "/login/:path*", "/clients", "/clients/:path*", "/dashboard", "/dashboard/:path*", "/tax", "/tax/:path*", "/api/:path*"],
+  matcher: ["/login", "/login/:path*", "/clients", "/clients/:path*", "/dashboard", "/dashboard/:path*", "/billing", "/billing/:path*", "/tax", "/tax/:path*", "/api/:path*"],
 };
 

@@ -1,15 +1,22 @@
+/**
+ * Server-only: do not render Link/hooks here.
+ * This file must only fetch data and pass serializable props to ClientEditPage.
+ * Do not import: next/link, useState, useEffect, or client-only UI (shadcn/radix).
+ */
 import { notFound } from "next/navigation";
-import Link from "next/link";
 import { headers } from "next/headers";
 import { getBaseUrl } from "@/lib/api";
-import { ClientForm } from "@/components/ClientForm";
-import { ClientDeleteButton } from "./ClientDeleteButton";
-import { PdfPosVendaButton } from "@/components/PdfPosVendaButton";
+import { clientToInitialClient } from "@/lib/serialize/clientToInitialClient";
+import { ClientEditPage } from "./ClientEditPage";
 
 type PageProps = {
   params: Promise<{ id: string }>;
 };
 
+/**
+ * Server Component: apenas busca dados e repassa ao ClientEditPage.
+ * initialClient é normalizado por clientToInitialClient (RSC-safe, sem Date/Decimal).
+ */
 export default async function EditClientPage({ params }: PageProps) {
   const { id } = await params;
   const base = getBaseUrl();
@@ -29,7 +36,7 @@ export default async function EditClientPage({ params }: PageProps) {
     );
   }
 
-  let client;
+  let raw: unknown;
   try {
     const text = await res.text();
     if (!text) {
@@ -39,7 +46,7 @@ export default async function EditClientPage({ params }: PageProps) {
         </div>
       );
     }
-    client = JSON.parse(text);
+    raw = JSON.parse(text);
   } catch {
     return (
       <div className="mx-auto max-w-3xl px-4 py-8">
@@ -48,50 +55,7 @@ export default async function EditClientPage({ params }: PageProps) {
     );
   }
 
-  return (
-    <>
-      <div className="mb-8 flex flex-wrap items-center justify-between gap-4">
-        <h1 className="text-2xl font-semibold text-gray-900">Editar cliente</h1>
-        <div className="flex flex-wrap items-center gap-2">
-          <Link
-            href="/clients"
-            className="rounded-lg border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Voltar
-          </Link>
-          <PdfPosVendaButton clientId={id} />
-          <ClientDeleteButton clientId={id} clientName={client.companyName} />
-        </div>
-      </div>
+  const initialClient = clientToInitialClient(raw);
 
-      <div className="rounded-xl border border-gray-200 bg-white p-6 shadow-sm sm:p-8">
-        <ClientForm
-          initialData={{
-            companyName: client.companyName,
-            customerCode: client.customerCode,
-            paymentDate: client.paymentDate ?? "",
-            commercial: client.commercial ?? "",
-            sdr: client.sdr ?? "",
-            businessType: client.businessType ?? "",
-            paymentMethod: client.paymentMethod ?? "",
-            anonymous: client.anonymous ?? false,
-            holding: client.holding ?? false,
-            affiliate: client.affiliate ?? false,
-            express: client.express ?? false,
-            notes: client.notes ?? "",
-            email: client.email ?? "",
-            personalAddressLine1: client.personalAddressLine1 ?? "",
-            personalAddressLine2: client.personalAddressLine2 ?? "",
-            personalCity: client.personalCity ?? "",
-            personalState: client.personalState ?? "",
-            personalPostalCode: client.personalPostalCode ?? "",
-            personalCountry: client.personalCountry ?? "",
-            items: client.items ?? [],
-            partners: client.partners ?? [],
-          }}
-          clientId={id}
-        />
-      </div>
-    </>
-  );
+  return <ClientEditPage clientId={id} initialClient={initialClient} />;
 }

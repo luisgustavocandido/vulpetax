@@ -4,6 +4,7 @@ import { promises as fs } from "fs";
 import path from "path";
 import { db } from "@/db";
 import { clients, clientLineItems, clientPartners } from "@/db/schema";
+import type { LineItemKind } from "@/db/schema";
 import { eq } from "drizzle-orm";
 import { assertPlaceholderCoverage } from "./posVendaPlaceholders";
 import {
@@ -15,6 +16,23 @@ import {
   orEmpty,
 } from "./formatHelpers";
 
+/** Ordem fixa das 5 linhas da tabela no PDF: Descrição | Valor */
+const SLOT_KINDS: LineItemKind[] = [
+  "LLC",
+  "Endereco",
+  "Gateway",
+  "ServicoAdicional",
+  "BancoTradicional",
+];
+
+const SLOT_LABELS: string[] = [
+  "LLC:",
+  "Endereço:",
+  "Gateway:",
+  "Serviço Adicional:",
+  "Banco Tradicional:",
+];
+
 const TEMPLATE_PATH = path.join(
   process.cwd(),
   "src/assets/templates/pos-venda-llc-template.docx"
@@ -24,6 +42,61 @@ function roleToPapel(role: string): string {
   if (role === "SocioPrincipal") return "Sócio Principal";
   if (role === "Socio") return "Sócio";
   return role;
+}
+
+type LineItemRow = typeof clientLineItems.$inferSelect;
+
+/** Remove do início do texto o rótulo da linha (ex.: "LLC:", "LLC,", "Endereco,") para não repetir no PDF. */
+function stripLabelPrefix(label: string, text: string): string {
+  const normalized = text.trim();
+  if (!normalized) return normalized;
+  const labelBase = label.replace(/:$/, "").trim(); // "LLC:" -> "LLC"
+  
+  // Abordagem mais agressiva: remove qualquer ocorrência do rótulo no início
+  // até encontrar algo que não seja o rótulo seguido de separadores
+  let result = normalized;
+  
+  // Pattern 1: "LLC" seguido de separadores (vírgula, espaço, dois pontos, etc.)
+  const pattern1 = new RegExp(`^${escapeRe(labelBase)}[\\s,:·]+`, "i");
+  // Pattern 2: "LLC" seguido imediatamente por outro "LLC" (sem separador explícito)
+  const pattern2 = new RegExp(`^${escapeRe(labelBase)}(?=\\s*${escapeRe(labelBase)})`, "i");
+  
+  let prev = "";
+  let iterations = 0;
+  // Remove iterativamente até não conseguir mais
+  while (result !== prev && iterations < 100) {
+    prev = result;
+    result = result.replace(pattern1, "").trim();
+    result = result.replace(pattern2, "").trim();
+    iterations++;
+  }
+  
+  return result || normalized;
+}
+
+function escapeRe(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+/** Retorna só o conteúdo da descrição (sem o rótulo), para o template usar "Rótulo: <<item_N_descricao>>" sem duplicar. */
+function formatItemDescription(
+  label: string,
+  item: LineItemRow | null
+): string {
+  if (!item) return EMPTY;
+  if (label === "Endereço:") {
+    const parts: string[] = [];
+    const provider = (item.addressProvider ?? "").trim();
+    const skipProvider = /^endere[çc]o$/i.test(provider);
+    if (provider && !skipProvider) parts.push(provider);
+    if (item.addressLine1) parts.push(item.addressLine1);
+    const main = parts.length ? parts.join(", ") : (item.description || EMPTY);
+    const suffix = item.billingPeriod ? ` · ${item.billingPeriod}` : "";
+    const raw = `${main}${suffix}`.trim();
+    return stripLabelPrefix("Endereço", raw) || raw;
+  }
+  const desc = item.description?.trim() || EMPTY;
+  return stripLabelPrefix(label, desc) || desc;
 }
 
 /**
@@ -40,11 +113,10 @@ async function buildViewModel(clientId: string): Promise<PosVendaViewModel | nul
     .limit(1);
   if (!client || client.deletedAt) return null;
 
-  const items = await db
+  const allItems = await db
     .select()
     .from(clientLineItems)
-    .where(eq(clientLineItems.clientId, clientId))
-    .limit(5);
+    .where(eq(clientLineItems.clientId, clientId));
 
   const partnersRows = await db
     .select()
@@ -76,15 +148,19 @@ async function buildViewModel(clientId: string): Promise<PosVendaViewModel | nul
     observacao: orEmpty(client.notes),
   };
 
-  // Itens 1..5 (slots fixos sempre preenchidos)
-  for (let i = 1; i <= 5; i++) {
-    const item = items[i - 1];
-    viewModel[`item_${i}_tipo`] = orEmpty(item?.kind);
-    viewModel[`item_${i}_descricao`] = orEmpty(item?.description);
-    viewModel[`item_${i}_valor`] = item ? formatUsd(item.valueCents) : EMPTY;
-    viewModel[`item_${i}_sale_date`] = item?.saleDate ? formatDate(item.saleDate) : EMPTY;
-    viewModel[`item_${i}_comercial`] = orEmpty(item?.commercial);
-    viewModel[`item_${i}_sdr`] = orEmpty(item?.sdr);
+  // Itens 1..5: slots fixos por tipo (LLC, Endereço, Gateway, Serviço Adicional, Banco Tradicional)
+  for (let i = 0; i < 5; i++) {
+    const kind = SLOT_KINDS[i];
+    const label = SLOT_LABELS[i];
+    const item = allItems.find((it) => it.kind === kind) ?? null;
+    const n = i + 1;
+
+    viewModel[`item_${n}_tipo`] = orEmpty(item?.kind);
+    viewModel[`item_${n}_descricao`] = formatItemDescription(label, item);
+    viewModel[`item_${n}_valor`] = item ? formatUsd(item.valueCents) : EMPTY;
+    viewModel[`item_${n}_sale_date`] = item?.saleDate ? formatDate(item.saleDate) : EMPTY;
+    viewModel[`item_${n}_comercial`] = orEmpty(item?.commercial);
+    viewModel[`item_${n}_sdr`] = orEmpty(item?.sdr);
   }
 
   // Sócios 1..5 (slots fixos sempre preenchidos)

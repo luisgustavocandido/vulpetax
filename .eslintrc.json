@@ -1,3 +1,21 @@
 {
-  "extends": ["next/core-web-vitals", "next/typescript"]
+  "extends": ["next/core-web-vitals", "next/typescript"],
+  "overrides": [
+    {
+      "files": ["src/app/clients/[id]/page.tsx"],
+      "rules": {
+        "no-restricted-imports": [
+          "error",
+          {
+            "paths": [
+              {
+                "name": "next/link",
+                "message": "Server-only page: use ClientEditPage for Link. Do not render Link/hooks here."
+              }
+            ]
+          }
+        ]
+      }
+    }
+  ]
 }

@@ -1,11 +1,26 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { db } from "@/db";
-import { clients, clientLineItems, clientPartners, type CommercialSdr, type LineItemKind, type PartnerRole } from "@/db/schema";
-import { eq } from "drizzle-orm";
+import {
+  clients,
+  clientLineItems,
+  clientPartners,
+  type PartnerRole,
+} from "@/db/schema";
+import { eq, inArray } from "drizzle-orm";
 import { getRequestMeta } from "@/lib/requestMeta";
 import { logAudit, diffChangedFields } from "@/lib/audit";
 import { updateClientSchema, percentToBasisPoints } from "@/lib/clientSchemas";
 import { normalizeCompanyName } from "@/lib/clientDedupe";
+import { normalizeLineItemForDb } from "@/lib/normalizeLineItemForDb";
+import { normalizeLegacyToLineItemInputArray } from "@/types/lineItems";
+
+/** Serializa valor de coluna date para JSON (sempre string YYYY-MM-DD ou undefined). */
+function dateToIsoString(value: Date | string | null | undefined): string | undefined {
+  if (value == null) return undefined;
+  if (typeof value === "string") return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
+  return value instanceof Date ? value.toISOString().slice(0, 10) : undefined;
+}
 
 export async function GET(
   _request: NextRequest,
@@ -21,7 +36,7 @@ export async function GET(
     return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
   }
 
-  const items = await db
+  const lineItemsRows = await db
     .select()
     .from(clientLineItems)
     .where(eq(clientLineItems.clientId, id));
@@ -31,18 +46,29 @@ export async function GET(
     .from(clientPartners)
     .where(eq(clientPartners.clientId, id));
 
+  const lineItems = lineItemsRows.map((i) => ({
+    id: i.id,
+    kind: i.kind,
+    description: i.description,
+    valueCents: i.valueCents,
+    saleDate: dateToIsoString(i.saleDate),
+    billingPeriod: i.billingPeriod ?? undefined,
+    expirationDate: dateToIsoString(i.expirationDate),
+    commercial: i.commercial ?? undefined,
+    sdr: i.sdr ?? undefined,
+    addressProvider: i.addressProvider ?? undefined,
+    addressLine1: i.addressLine1 ?? undefined,
+    addressLine2: i.addressLine2 ?? undefined,
+    steNumber: i.steNumber ?? undefined,
+    llcCategory: i.llcCategory ?? undefined,
+    llcState: i.llcState ?? undefined,
+    llcCustomCategory: i.llcCustomCategory ?? undefined,
+  }));
+
   return NextResponse.json({
     ...row,
-    items: items.map((i) => ({
-      id: i.id,
-      kind: i.kind,
-      description: i.description,
-      valueCents: i.valueCents,
-      saleDate: i.saleDate ?? undefined,
-      commercial: i.commercial ?? undefined,
-      sdr: i.sdr ?? undefined,
-      meta: i.meta,
-    })),
+    lineItems,
+    items: lineItems,
     partners: partners.map((p) => ({
       id: p.id,
       fullName: p.fullName,
@@ -65,7 +91,24 @@ export async function PATCH(
   { params }: { params: Promise<{ id: string }> }
 ) {
   const { id } = await params;
-  const body = await request.json();
+  const body = (await request.json()) as Record<string, unknown>;
+  const hasLineItems = body.lineItems !== undefined;
+  const hasItems = body.items !== undefined;
+  if (hasLineItems && hasItems && process.env.NODE_ENV === "development") {
+    console.warn("[PATCH /api/clients/:id] both lineItems and items present, using lineItems");
+  }
+  const rawIncoming = body.lineItems ?? body.items;
+  if (rawIncoming !== undefined) {
+    const normalized = normalizeLegacyToLineItemInputArray(Array.isArray(rawIncoming) ? rawIncoming : []);
+    if (!normalized.ok) {
+      return NextResponse.json(
+        { error: normalized.error },
+        { status: normalized.status ?? 400 }
+      );
+    }
+    body.lineItems = normalized.items;
+  }
+  delete (body as Record<string, unknown>).items;
   const parsed = updateClientSchema.safeParse(body);
   if (!parsed.success) {
     return NextResponse.json(
@@ -75,6 +118,10 @@ export async function PATCH(
   }
   const meta = getRequestMeta(request);
   const data = parsed.data;
+
+  if (process.env.NODE_ENV === "development" && data.lineItems !== undefined) {
+    console.log("[PATCH /api/clients/:id] lineItems received:", data.lineItems.length, data.lineItems);
+  }
 
   const [existing] = await db
     .select()
@@ -110,16 +157,35 @@ export async function PATCH(
   if (data.personalCountry !== undefined) clientUpdates.personalCountry = data.personalCountry?.trim() || null;
 
   const hasClientUpdates = Object.keys(clientUpdates).length > 0;
-  const hasItems = data.items !== undefined;
+  const hasLineItemsInPayload = data.lineItems !== undefined;
   const hasPartners = data.partners !== undefined;
 
-  if (!hasClientUpdates && !hasItems && !hasPartners) {
-    const items = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id));
-    const partners = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
+  if (!hasClientUpdates && !hasLineItemsInPayload && !hasPartners) {
+    const itemsRows = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id));
+    const partnersRows = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
+    const lineItemsPayload = itemsRows.map((i) => ({
+      id: i.id,
+      kind: i.kind,
+      description: i.description,
+      valueCents: i.valueCents,
+      saleDate: dateToIsoString(i.saleDate),
+      billingPeriod: i.billingPeriod ?? undefined,
+      expirationDate: dateToIsoString(i.expirationDate),
+      commercial: i.commercial ?? undefined,
+      sdr: i.sdr ?? undefined,
+      addressProvider: i.addressProvider ?? undefined,
+      addressLine1: i.addressLine1 ?? undefined,
+      addressLine2: i.addressLine2 ?? undefined,
+      steNumber: i.steNumber ?? undefined,
+      llcCategory: i.llcCategory ?? undefined,
+      llcState: i.llcState ?? undefined,
+      llcCustomCategory: i.llcCustomCategory ?? undefined,
+    }));
     return NextResponse.json({
       ...existing,
-      items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, saleDate: i.saleDate ?? undefined, commercial: i.commercial ?? undefined, sdr: i.sdr ?? undefined, meta: i.meta })),
-      partners: partners.map((p) => ({
+      lineItems: lineItemsPayload,
+      items: lineItemsPayload,
+      partners: partnersRows.map((p) => ({
         id: p.id,
         fullName: p.fullName,
         role: p.role,
@@ -136,8 +202,22 @@ export async function PATCH(
     });
   }
 
-  const oldItems = hasItems ? await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id)) : [];
+  const existingItems = hasLineItemsInPayload ? await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id)) : [];
   const oldPartners = hasPartners ? await db.select().from(clientPartners).where(eq(clientPartners.clientId, id)) : [];
+
+  const incomingLineItems = hasLineItemsInPayload && Array.isArray(data.lineItems) ? data.lineItems : [];
+  const existingIds = new Set(existingItems.map((e) => e.id));
+  const incoming = incomingLineItems.map((i) =>
+    i.id && existingIds.has(i.id) ? i : { ...i, id: undefined }
+  );
+  const incomingIds = new Set(incoming.filter((i) => i.id).map((i) => i.id!));
+  const toUpdate = incoming.filter((i) => i.id);
+  const toCreate = incoming.filter((i) => !i.id);
+  const toDelete = existingItems.filter((e) => !incomingIds.has(e.id));
+
+  if (process.env.NODE_ENV === "development" && hasLineItemsInPayload) {
+    console.log("[PATCH /api/clients/:id] lineItems sync: existingCount=", existingItems.length, "toCreate=", toCreate.length, "toUpdate=", toUpdate.length, "toDelete=", toDelete.length);
+  }
 
   const [updated] = await db.transaction(async (tx) => {
     if (hasClientUpdates) {
@@ -147,18 +227,52 @@ export async function PATCH(
         .where(eq(clients.id, id));
     }
 
-    if (hasItems) {
-      await tx.delete(clientLineItems).where(eq(clientLineItems.clientId, id));
-      for (const item of data.items!) {
+    if (hasLineItemsInPayload) {
+      if (toDelete.length > 0) {
+        await tx.delete(clientLineItems).where(inArray(clientLineItems.id, toDelete.map((d) => d.id)));
+      }
+      for (const item of toUpdate) {
+        const norm = normalizeLineItemForDb(item);
+        await tx
+          .update(clientLineItems)
+          .set({
+            kind: norm.kind,
+            description: norm.description,
+            valueCents: norm.valueCents,
+            saleDate: norm.saleDate,
+            billingPeriod: norm.billingPeriod,
+            expirationDate: norm.expirationDate,
+            commercial: norm.commercial,
+            sdr: norm.sdr,
+            addressProvider: norm.addressProvider,
+            addressLine1: norm.addressLine1,
+            addressLine2: norm.addressLine2,
+            steNumber: norm.steNumber,
+            llcCategory: norm.llcCategory,
+            llcState: norm.llcState,
+            llcCustomCategory: norm.llcCustomCategory,
+          })
+          .where(eq(clientLineItems.id, item.id!));
+      }
+      for (const item of toCreate) {
+        const norm = normalizeLineItemForDb(item);
         await tx.insert(clientLineItems).values({
           clientId: id,
-          kind: item.kind as LineItemKind,
-          description: item.description,
-          valueCents: item.valueCents,
-          saleDate: item.saleDate ?? null,
-          commercial: (item.commercial as CommercialSdr) ?? null,
-          sdr: (item.sdr as CommercialSdr) ?? null,
-          meta: item.meta ?? null,
+          kind: norm.kind,
+          description: norm.description,
+          valueCents: norm.valueCents,
+          saleDate: norm.saleDate,
+          billingPeriod: norm.billingPeriod,
+          expirationDate: norm.expirationDate,
+          commercial: norm.commercial,
+          sdr: norm.sdr,
+          addressProvider: norm.addressProvider,
+          addressLine1: norm.addressLine1,
+          addressLine2: norm.addressLine2,
+          steNumber: norm.steNumber,
+          llcCategory: norm.llcCategory,
+          llcState: norm.llcState,
+          llcCustomCategory: norm.llcCustomCategory,
         });
       }
     }
@@ -188,12 +302,12 @@ export async function PATCH(
 
     const oldSnapshot = {
       ...existing,
-      ...(hasItems && { items: oldItems }),
+      ...(hasLineItemsInPayload && { lineItems: existingItems }),
       ...(hasPartners && { partners: oldPartners }),
     };
     const newSnapshot = {
       ...row,
-      ...(hasItems && { items: data.items }),
+      ...(hasLineItemsInPayload && { lineItems: data.lineItems }),
       ...(hasPartners && { partners: data.partners }),
     };
     const { oldValues, newValues } = diffChangedFields(
@@ -216,11 +330,52 @@ export async function PATCH(
   const items = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id));
   const partners = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
 
-  return NextResponse.json({
+  if (process.env.NODE_ENV === "development" && hasLineItemsInPayload) {
+    console.log("[PATCH /api/clients/:id] lineItems after sync: count=", items.length);
+  }
+
+  revalidatePath("/clients");
+  revalidatePath(`/clients/${id}`);
+
+  const lineItemsPayload = items.map((i) => ({
+    id: i.id,
+    kind: i.kind,
+    description: i.description,
+    valueCents: i.valueCents,
+    saleDate: dateToIsoString(i.saleDate),
+    billingPeriod: i.billingPeriod ?? undefined,
+    expirationDate: dateToIsoString(i.expirationDate),
+    commercial: i.commercial ?? undefined,
+    sdr: i.sdr ?? undefined,
+    addressProvider: i.addressProvider ?? undefined,
+    addressLine1: i.addressLine1 ?? undefined,
+    addressLine2: i.addressLine2 ?? undefined,
+    steNumber: i.steNumber ?? undefined,
+    llcCategory: i.llcCategory ?? undefined,
+    llcState: i.llcState ?? undefined,
+    llcCustomCategory: i.llcCustomCategory ?? undefined,
+  }));
+  const client = {
     ...updated,
-    items: items.map((i) => ({ id: i.id, kind: i.kind, description: i.description, valueCents: i.valueCents, saleDate: i.saleDate ?? undefined, commercial: i.commercial ?? undefined, sdr: i.sdr ?? undefined, meta: i.meta })),
-    partners: partners.map((p) => ({ id: p.id, fullName: p.fullName, role: p.role, percentage: p.percentageBasisPoints / 100, phone: p.phone })),
-  });
+    lineItems: lineItemsPayload,
+    items: lineItemsPayload,
+    partners: partners.map((p) => ({
+      id: p.id,
+      fullName: p.fullName,
+      role: p.role,
+      percentage: p.percentageBasisPoints / 100,
+      phone: p.phone,
+      email: p.email ?? undefined,
+      addressLine1: p.addressLine1 ?? undefined,
+      addressLine2: p.addressLine2 ?? undefined,
+      city: p.city ?? undefined,
+      state: p.state ?? undefined,
+      postalCode: p.postalCode ?? undefined,
+      country: p.country ?? undefined,
+    })),
+  };
+
+  return NextResponse.json({ client });
 }
 
 export async function DELETE(

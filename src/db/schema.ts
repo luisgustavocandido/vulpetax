@@ -17,6 +17,13 @@ import { relations, sql } from "drizzle-orm";
 export const COMMERCIAL_SDR_VALUES = ["João", "Pablo", "Gabriel", "Gustavo"] as const;
 export type CommercialSdr = (typeof COMMERCIAL_SDR_VALUES)[number];
 
+export const BILLING_PERIOD_VALUES = ["Mensal", "Anual"] as const;
+export type BillingPeriod = (typeof BILLING_PERIOD_VALUES)[number];
+
+/** Endereço do item (kind=Endereço): provedor do endereço. */
+export const ADDRESS_PROVIDER_VALUES = ["New Mexico", "Florida", "Próprio", "Agente Registrado"] as const;
+export type AddressProvider = (typeof ADDRESS_PROVIDER_VALUES)[number];
+
 export const LINE_ITEM_KINDS = [
   "LLC",
   "Endereco",
@@ -30,6 +37,15 @@ export type LineItemKind = (typeof LINE_ITEM_KINDS)[number];
 
 export const PARTNER_ROLES = ["SocioPrincipal", "Socio"] as const;
 export type PartnerRole = (typeof PARTNER_ROLES)[number];
+
+export const BILLING_CHARGE_STATUSES = ["pending", "paid", "overdue", "canceled"] as const;
+export type BillingChargeStatus = (typeof BILLING_CHARGE_STATUSES)[number];
+
+export const BILLING_CHARGE_PROVIDERS = ["manual", "stripe"] as const;
+export type BillingChargeProvider = (typeof BILLING_CHARGE_PROVIDERS)[number];
+
+export const ANNUAL_REPORT_STATUSES = ["pending", "overdue", "done", "canceled"] as const;
+export type AnnualReportStatus = (typeof ANNUAL_REPORT_STATUSES)[number];
 
 // --- users ---
 export const users = pgTable("users", {
@@ -113,12 +129,101 @@ export const clientLineItems = pgTable(
     valueCents: integer("value_cents").notNull().default(0),
     meta: jsonb("meta"),
     saleDate: date("sale_date"),
+    billingPeriod: varchar("billing_period", { length: 10 }).$type<BillingPeriod>(),
+    expirationDate: date("expiration_date"),
     commercial: varchar("commercial", { length: 50 }).$type<CommercialSdr>(),
     sdr: varchar("sdr", { length: 50 }).$type<CommercialSdr>(),
+    addressProvider: varchar("address_provider", { length: 50 }).$type<AddressProvider>(),
+    addressLine1: text("address_line1"),
+    addressLine2: text("address_line2"),
+    steNumber: varchar("ste_number", { length: 20 }),
+    llcCategory: text("llc_category"),
+    llcState: varchar("llc_state", { length: 2 }),
+    llcCustomCategory: text("llc_custom_category"),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
   }
+);
+
+// --- billing_charges (cobranças de itens Endereço Mensal/Anual) ---
+export const billingCharges = pgTable(
+  "billing_charges",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    lineItemId: uuid("line_item_id")
+      .notNull()
+      .references(() => clientLineItems.id, { onDelete: "cascade" }),
+    periodStart: date("period_start").notNull(),
+    periodEnd: date("period_end").notNull(),
+    amountCents: integer("amount_cents").notNull(),
+    currency: varchar("currency", { length: 3 }).notNull().default("USD"),
+    status: varchar("status", { length: 20 })
+      .notNull()
+      .default("pending")
+      .$type<BillingChargeStatus>(),
+    dueDate: date("due_date").notNull(),
+    paidAt: timestamp("paid_at", { withTimezone: true }),
+    paidMethod: text("paid_method"),
+    provider: varchar("provider", { length: 20 }).$type<BillingChargeProvider>(),
+    providerRef: varchar("provider_ref", { length: 255 }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("billing_charges_line_item_period_unique").on(
+      table.lineItemId,
+      table.periodStart,
+      table.periodEnd
+    ),
+    index("billing_charges_status_due_date_idx").on(table.status, table.dueDate),
+    index("billing_charges_client_id_idx").on(table.clientId),
+    index("billing_charges_line_item_id_idx").on(table.lineItemId),
+  ]
+);
+
+// --- annual_report_obligations (obrigações de Annual Report por estado) ---
+export const annualReportObligations = pgTable(
+  "annual_report_obligations",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    llcState: text("llc_state").notNull(),
+    frequency: varchar("frequency", { length: 10 }).notNull(), // "Anual" | "Bienal"
+    periodYear: integer("period_year").notNull(),
+    dueDate: date("due_date").notNull(),
+    status: varchar("status", { length: 20 })
+      .notNull()
+      .default("pending")
+      .$type<AnnualReportStatus>(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    notes: text("notes"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    unique("annual_report_obligations_client_state_year_unique").on(
+      table.clientId,
+      table.llcState,
+      table.periodYear
+    ),
+    index("annual_report_obligations_status_due_date_idx").on(table.status, table.dueDate),
+    index("annual_report_obligations_client_id_idx").on(table.clientId),
+  ]
 );
 
 // --- client_partners ---
@@ -359,15 +464,28 @@ export const clientsRelations = relations(clients, ({ one, many }) => ({
   }),
   lineItems: many(clientLineItems),
   partners: many(clientPartners),
+  billingCharges: many(billingCharges),
   taxProfile: one(clientTaxProfile),
   taxOwners: many(clientTaxOwners),
   taxForms: many(clientTaxForms),
 }));
 
-export const clientLineItemsRelations = relations(clientLineItems, ({ one }) => ({
+export const clientLineItemsRelations = relations(clientLineItems, ({ one, many }) => ({
   client: one(clients, {
     fields: [clientLineItems.clientId],
     references: [clients.id],
+  }),
+  billingCharges: many(billingCharges),
+}));
+
+export const billingChargesRelations = relations(billingCharges, ({ one }) => ({
+  client: one(clients, {
+    fields: [billingCharges.clientId],
+    references: [clients.id],
+  }),
+  lineItem: one(clientLineItems, {
+    fields: [billingCharges.lineItemId],
+    references: [clientLineItems.id],
   }),
 }));
 

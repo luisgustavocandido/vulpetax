@@ -19,9 +19,11 @@
     "db:dedupe-clients": "npx tsx src/scripts/dedupeClientsByName.ts",
     "pdf:update-template": "npx tsx scripts/update-pos-venda-template-placeholders.ts",
     "pdf:test-placeholders": "npx tsx src/lib/pdf/__tests__/placeholderCoverage.test.ts",
-    "pdf:ping-gotenberg": "npx tsx scripts/ping-gotenberg.ts"
+    "pdf:ping-gotenberg": "npx tsx scripts/ping-gotenberg.ts",
+    "test:line-items": "npx tsx src/types/__tests__/lineItems.test.ts"
   },
   "dependencies": {
+    "@hookform/resolvers": "^5.2.2",
     "bcryptjs": "^3.0.3",
     "csv-parse": "^6.1.0",
     "docxtemplater": "^3.68.1",
@@ -32,8 +34,9 @@
     "next-auth": "^4.24.13",
     "pg": "^8.18.0",
     "pizzip": "^3.2.0",
-    "react": "^18",
-    "react-dom": "^18",
+    "react": "18.3.1",
+    "react-dom": "18.3.1",
+    "react-hook-form": "^7.71.1",
     "tmp-promise": "^3.0.3",
     "xlsx": "^0.18.5",
     "zod": "^4.3.6"
