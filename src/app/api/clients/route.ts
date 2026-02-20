@@ -258,6 +258,8 @@ export async function POST(request: NextRequest) {
             llcCategory: norm.llcCategory,
             llcState: norm.llcState,
             llcCustomCategory: norm.llcCustomCategory,
+            paymentMethod: norm.paymentMethod,
+            paymentMethodCustom: norm.paymentMethodCustom,
           });
         }
 
@@ -341,6 +343,8 @@ export async function POST(request: NextRequest) {
           llcCategory: norm.llcCategory,
           llcState: norm.llcState,
           llcCustomCategory: norm.llcCustomCategory,
+          paymentMethod: norm.paymentMethod,
+          paymentMethodCustom: norm.paymentMethodCustom,
         });
       }
 
@@ -410,6 +414,8 @@ export async function POST(request: NextRequest) {
     llcCategory: i.llcCategory ?? null,
     llcState: i.llcState ?? null,
     llcCustomCategory: i.llcCustomCategory ?? null,
+    paymentMethod: i.paymentMethod ?? null,
+    paymentMethodCustom: i.paymentMethodCustom ?? null,
   }));
   const client = clientRow
     ? {

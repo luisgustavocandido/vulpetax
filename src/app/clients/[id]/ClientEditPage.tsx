@@ -28,7 +28,6 @@ export function ClientEditPage({ clientId, initialClient }: ClientEditPageProps)
     commercial: initialClient.commercial ?? "",
     sdr: initialClient.sdr ?? "",
     businessType: initialClient.businessType ?? "",
-    paymentMethod: initialClient.paymentMethod ?? "",
     anonymous: initialClient.anonymous ?? false,
     holding: initialClient.holding ?? false,
     affiliate: initialClient.affiliate ?? false,

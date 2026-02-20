@@ -19,6 +19,11 @@ export type SerializedLineItem = {
   addressLine1?: string;
   addressLine2?: string;
   steNumber?: string;
+  llcCategory?: string;
+  llcState?: string;
+  llcCustomCategory?: string;
+  paymentMethod?: string;
+  paymentMethodCustom?: string;
   meta?: Record<string, unknown> | null;
 };
 
@@ -116,6 +121,11 @@ function serializeItem(raw: unknown): SerializedLineItem {
     addressLine1: o.addressLine1 != null ? toString(o.addressLine1) : undefined,
     addressLine2: o.addressLine2 != null ? toString(o.addressLine2) : undefined,
     steNumber: o.steNumber != null ? toString(o.steNumber) : undefined,
+    llcCategory: o.llcCategory != null ? toString(o.llcCategory) : undefined,
+    llcState: o.llcState != null ? toString(o.llcState) : undefined,
+    llcCustomCategory: o.llcCustomCategory != null ? toString(o.llcCustomCategory) : undefined,
+    paymentMethod: o.paymentMethod != null ? toString(o.paymentMethod) : undefined,
+    paymentMethodCustom: o.paymentMethodCustom != null ? toString(o.paymentMethodCustom) : undefined,
     meta: o.meta != null && typeof o.meta === "object" && !Array.isArray(o.meta)
       ? (o.meta as Record<string, unknown>)
       : undefined,

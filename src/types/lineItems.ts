@@ -30,6 +30,8 @@ export type LineItemForm = {
   llcCategory: string | null;
   llcState: string | null;
   llcCustomCategory: string | null;
+  paymentMethod: string | null;
+  paymentMethodCustom: string | null;
 };
 
 const VALID_KINDS = new Set(LINE_ITEM_KINDS);
@@ -71,6 +73,8 @@ export function lineItemFromApi(li: {
   llcCategory?: string | null;
   llcState?: string | null;
   llcCustomCategory?: string | null;
+  paymentMethod?: string | null;
+  paymentMethodCustom?: string | null;
 }): LineItemForm {
   const ap = li.addressProvider;
   const validAp =
@@ -127,6 +131,8 @@ export function lineItemFromApi(li: {
     llcCategory,
     llcState,
     llcCustomCategory,
+    paymentMethod: toStrNull(li.paymentMethod),
+    paymentMethodCustom: toStrNull(li.paymentMethodCustom),
   };
 }
 
@@ -160,6 +166,8 @@ export function lineItemToApi(form: LineItemForm): LineItemInput {
     llcCategory: form.kind === "LLC" ? form.llcCategory : null,
     llcState: form.kind === "LLC" ? form.llcState : null,
     llcCustomCategory: form.kind === "LLC" && form.llcCategory === "Personalizado" ? form.llcCustomCategory : null,
+    paymentMethod: form.paymentMethod,
+    paymentMethodCustom: form.paymentMethod === "Outro" ? form.paymentMethodCustom : null,
   };
 }
 
@@ -217,6 +225,8 @@ export function normalizeLegacyToLineItemInputArray(raw: unknown): NormalizeLine
       llcCategory: kind === "LLC" ? (o.llcCategory != null ? String(o.llcCategory).trim() || null : null) : null,
       llcState: kind === "LLC" ? (o.llcState != null ? String(o.llcState).trim().toUpperCase().slice(0, 2) || null : null) : null,
       llcCustomCategory: kind === "LLC" && o.llcCategory === "Personalizado" ? (o.llcCustomCategory != null ? String(o.llcCustomCategory).trim().slice(0, 200) || null : null) : null,
+      paymentMethod: o.paymentMethod != null ? String(o.paymentMethod).trim().slice(0, 100) || null : null,
+      paymentMethodCustom: o.paymentMethod === "Outro" && o.paymentMethodCustom != null ? String(o.paymentMethodCustom).trim().slice(0, 200) || null : null,
     });
   }
   return { ok: true, items };

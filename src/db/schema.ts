@@ -140,6 +140,8 @@ export const clientLineItems = pgTable(
     llcCategory: text("llc_category"),
     llcState: varchar("llc_state", { length: 2 }),
     llcCustomCategory: text("llc_custom_category"),
+    paymentMethod: varchar("payment_method", { length: 100 }),
+    paymentMethodCustom: varchar("payment_method_custom", { length: 200 }),
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

@@ -43,6 +43,8 @@ export type LineItemForDb = {
   llcCategory: string | null;
   llcState: string | null;
   llcCustomCategory: string | null;
+  paymentMethod: string | null;
+  paymentMethodCustom: string | null;
 };
 
 export function normalizeLineItemForDb(item: {
@@ -61,6 +63,8 @@ export function normalizeLineItemForDb(item: {
   llcCategory?: string | null;
   llcState?: string | null;
   llcCustomCategory?: string | null;
+  paymentMethod?: string | null;
+  paymentMethodCustom?: string | null;
 }): LineItemForDb {
   const isEndereco = item.kind === "Endereco";
   const billingPeriod: BillingPeriod | null = isEndereco
@@ -124,6 +128,12 @@ export function normalizeLineItemForDb(item: {
     }
   }
 
+  // Normalização de paymentMethod
+  const paymentMethod = item.paymentMethod?.trim() || null;
+  const paymentMethodCustom = paymentMethod === "Outro" && item.paymentMethodCustom
+    ? item.paymentMethodCustom.trim().slice(0, 200)
+    : null;
+
   return {
     kind: item.kind as LineItemKind,
     description,
@@ -140,5 +150,7 @@ export function normalizeLineItemForDb(item: {
     llcCategory: isLLC ? llcCategory : null,
     llcState: isLLC ? llcState : null,
     llcCustomCategory: isLLC ? llcCustomCategory : null,
+    paymentMethod,
+    paymentMethodCustom,
   };
 }

@@ -17,7 +17,6 @@ import { CountrySelectForAddress } from "./CountrySelectForAddress";
 import { BUSINESS_TYPES } from "@/constants/businessTypes";
 import { BusinessTypeCombobox } from "./BusinessTypeCombobox";
 import { PAYMENT_METHODS } from "@/constants/paymentMethods";
-import { PaymentMethodCombobox } from "./PaymentMethodCombobox";
 import { addOneYear } from "@/lib/dates/addOneYear";
 import { lineItemFromApi, ADDRESS_PROVIDER_OPTIONS } from "@/types/lineItems";
 import { LLC_CATEGORIES } from "@/constants/llcCategories";
@@ -44,7 +43,17 @@ const lineItemFormSchema = z.object({
   llcCategory: z.string().nullable().optional(),
   llcState: z.string().nullable().optional(),
   llcCustomCategory: z.string().max(200).nullable().optional(),
+  paymentMethod: z.string().max(100).nullable().optional(),
+  paymentMethodCustom: z.string().max(200).nullable().optional(),
 }).superRefine((item, ctx) => {
+  // Validação de paymentMethod (obrigatório para todos os itens)
+  if (!item.paymentMethod || String(item.paymentMethod).trim().length < 1) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Forma de pagamento é obrigatória", path: ["paymentMethod"] });
+  } else if (item.paymentMethod === "Outro") {
+    if (!item.paymentMethodCustom || String(item.paymentMethodCustom).trim().length < 1) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Especifique a forma de pagamento", path: ["paymentMethodCustom"] });
+    }
+  }
   // Validações para LLC
   if (item.kind === "LLC") {
     if (!item.llcCategory || String(item.llcCategory).trim().length < 1) {
@@ -116,7 +125,6 @@ const schema = z
     commercial: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
     sdr: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
-    paymentMethod: z.string().min(1, "Forma de pagamento é obrigatória").max(100),
     anonymous: z.boolean().default(false),
     holding: z.boolean().default(false),
     affiliate: z.boolean().default(false),
@@ -160,6 +168,8 @@ const EMPTY_LINE_ITEM: ClientFormData["lineItems"][number] = {
   llcCategory: null,
   llcState: null,
   llcCustomCategory: null,
+  paymentMethod: null,
+  paymentMethodCustom: null,
 };
 
 const EMPTY_PARTNER: ClientFormData["partners"][0] = {
@@ -221,16 +231,6 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
     isBusinessTypeInList ? "" : initialBusinessType
   );
 
-  // Lógica para inicializar selectedPaymentMethod e customPaymentMethod
-  const initialPaymentMethod = initialData?.paymentMethod ?? "";
-  const isPaymentMethodInList = initialPaymentMethod && PAYMENT_METHODS.includes(initialPaymentMethod as typeof PAYMENT_METHODS[number]);
-  const [selectedPaymentMethod, setSelectedPaymentMethod] = useState<string>(
-    isPaymentMethodInList ? initialPaymentMethod : (initialPaymentMethod ? "Outro" : "")
-  );
-  const [customPaymentMethod, setCustomPaymentMethod] = useState<string>(
-    isPaymentMethodInList ? "" : initialPaymentMethod
-  );
-
   const defaultValues: Partial<ClientFormData> = {
     companyName: initialData?.companyName ?? "",
     customerCode: initialData?.customerCode ?? "",
@@ -238,7 +238,6 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
     commercial: initialData?.commercial ?? "",
     sdr: initialData?.sdr ?? "",
     businessType: initialData?.businessType ?? "",
-    paymentMethod: initialData?.paymentMethod ?? "",
     anonymous: initialData?.anonymous ?? false,
     holding: initialData?.holding ?? false,
     affiliate: initialData?.affiliate ?? false,
@@ -358,32 +357,6 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       return;
     }
 
-    // Validação do campo paymentMethod
-    if (!selectedPaymentMethod || selectedPaymentMethod.trim() === "") {
-      setFieldErrors({ paymentMethod: "Forma de pagamento é obrigatória" });
-      setSubmitting(false);
-      return;
-    }
-
-    // Validação do campo customPaymentMethod quando "Outro" está selecionado
-    if (selectedPaymentMethod === "Outro" && !customPaymentMethod.trim()) {
-      setFieldErrors({ paymentMethod: "Especifique a forma de pagamento" });
-      setSubmitting(false);
-      return;
-    }
-
-    // Determinar o valor final de paymentMethod para salvar
-    // Após as validações acima, sabemos que sempre terá um valor não vazio
-    const finalPaymentMethod: string = selectedPaymentMethod === "Outro"
-      ? customPaymentMethod.trim()
-      : selectedPaymentMethod.trim();
-
-    if (!finalPaymentMethod) {
-      setFieldErrors({ paymentMethod: "Forma de pagamento é obrigatória" });
-      setSubmitting(false);
-      return;
-    }
-
     const data: ClientFormData = {
       companyName: (fd.get("companyName") ?? "").toString().trim(),
       customerCode: clientId ? (fd.get("customerCode") ?? "").toString().trim() : undefined,
@@ -391,7 +364,6 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       commercial: (fd.get("commercial") ?? "").toString().trim() || undefined,
       sdr: (fd.get("sdr") ?? "").toString().trim() || undefined,
       businessType: finalBusinessType,
-      paymentMethod: finalPaymentMethod,
       anonymous: fd.get("anonymous") === "on",
       holding: fd.get("holding") === "on",
       affiliate: fd.get("affiliate") === "on",
@@ -439,6 +411,8 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         llcCategory: li.kind === "LLC" ? (li.llcCategory ?? null) : null,
         llcState: li.kind === "LLC" ? (li.llcState ?? null) : null,
         llcCustomCategory: li.kind === "LLC" && li.llcCategory === "Personalizado" ? (li.llcCustomCategory ?? null) : null,
+        paymentMethod: li.paymentMethod ?? null,
+        paymentMethodCustom: li.paymentMethod === "Outro" ? (li.paymentMethodCustom ?? null) : null,
       })),
       partners: parsed.data.partners ?? [],
     };
@@ -629,45 +603,6 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                 />
                 {fieldErrors.businessType && selectedBusinessType === "Outro" && !customBusinessType.trim() && (
                   <p className="mt-1 text-sm text-red-600">{fieldErrors.businessType}</p>
-                )}
-              </div>
-            )}
-          </div>
-          <div className="sm:col-span-2">
-            <label htmlFor="paymentMethod" className="block text-sm font-medium text-gray-700">
-              Forma de Pagamento *
-            </label>
-            <div className="mt-1">
-              <PaymentMethodCombobox
-                value={selectedPaymentMethod || null}
-                onChange={(value) => {
-                  setSelectedPaymentMethod(value);
-                  if (value !== "Outro") {
-                    setCustomPaymentMethod("");
-                  }
-                }}
-                placeholder="Selecione a forma de pagamento…"
-                disabled={submitting}
-                error={fieldErrors.paymentMethod && selectedPaymentMethod !== "Outro" ? fieldErrors.paymentMethod : undefined}
-              />
-            </div>
-            {selectedPaymentMethod === "Outro" && (
-              <div className="mt-3">
-                <label htmlFor="customPaymentMethod" className="block text-sm font-medium text-gray-700">
-                  Especifique a forma de pagamento *
-                </label>
-                <input
-                  id="customPaymentMethod"
-                  name="customPaymentMethod"
-                  type="text"
-                  value={customPaymentMethod}
-                  onChange={(e) => setCustomPaymentMethod(e.target.value)}
-                  className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-                  placeholder="Digite a forma de pagamento"
-                  disabled={submitting}
-                />
-                {fieldErrors.paymentMethod && selectedPaymentMethod === "Outro" && !customPaymentMethod.trim() && (
-                  <p className="mt-1 text-sm text-red-600">{fieldErrors.paymentMethod}</p>
                 )}
               </div>
             )}
@@ -1039,8 +974,48 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                     </>
                   )}
 
-                  {/* LINHA FINAL: Comercial, SDR, Remove (padronizada para todos os tipos) */}
+                  {/* LINHA FINAL: Forma de Pagamento, Comercial, SDR, Remove (padronizada para todos os tipos) */}
                   <div className="col-span-12 md:col-span-3">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-xs font-medium text-gray-500">Forma de Pagamento *</label>
+                      <select
+                        {...register(`lineItems.${i}.paymentMethod`)}
+                        onChange={(e) => {
+                          const v = e.target.value || null;
+                          setValue(`lineItems.${i}.paymentMethod`, v);
+                          if (v !== "Outro") {
+                            setValue(`lineItems.${i}.paymentMethodCustom`, null);
+                          }
+                        }}
+                        className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                      >
+                        <option value="">Selecione</option>
+                        {PAYMENT_METHODS.map((pm) => (
+                          <option key={pm} value={pm}>{pm}</option>
+                        ))}
+                      </select>
+                      {formErrors.lineItems?.[i]?.paymentMethod && (
+                        <p className="text-xs text-red-600">{formErrors.lineItems[i]?.paymentMethod?.message}</p>
+                      )}
+                    </div>
+                  </div>
+                  {it?.paymentMethod === "Outro" && (
+                    <div className="col-span-12 md:col-span-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-500">Especifique *</label>
+                        <input
+                          {...register(`lineItems.${i}.paymentMethodCustom`)}
+                          type="text"
+                          placeholder="Forma de pagamento"
+                          className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        />
+                        {formErrors.lineItems?.[i]?.paymentMethodCustom && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems[i]?.paymentMethodCustom?.message}</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                  <div className={it?.paymentMethod === "Outro" ? "col-span-12 md:col-span-2" : "col-span-12 md:col-span-3"}>
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-gray-500">Comercial</label>
                       <select
@@ -1054,7 +1029,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                       </select>
                     </div>
                   </div>
-                  <div className="col-span-12 md:col-span-3">
+                  <div className={it?.paymentMethod === "Outro" ? "col-span-12 md:col-span-2" : "col-span-12 md:col-span-3"}>
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-gray-500">SDR</label>
                       <select
@@ -1068,7 +1043,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                       </select>
                     </div>
                   </div>
-                  <div className="col-span-12 md:col-span-6 flex items-end justify-end">
+                  <div className={it?.paymentMethod === "Outro" ? "col-span-12 md:col-span-2 flex items-end justify-end" : "col-span-12 md:col-span-3 flex items-end justify-end"}>
                     <button
                       type="button"
                       onClick={() => removeLineItem(i)}

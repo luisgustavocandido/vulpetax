@@ -63,6 +63,8 @@ export async function GET(
     llcCategory: i.llcCategory ?? undefined,
     llcState: i.llcState ?? undefined,
     llcCustomCategory: i.llcCustomCategory ?? undefined,
+    paymentMethod: i.paymentMethod ?? undefined,
+    paymentMethodCustom: i.paymentMethodCustom ?? undefined,
   }));
 
   return NextResponse.json({
@@ -180,6 +182,8 @@ export async function PATCH(
       llcCategory: i.llcCategory ?? undefined,
       llcState: i.llcState ?? undefined,
       llcCustomCategory: i.llcCustomCategory ?? undefined,
+      paymentMethod: i.paymentMethod ?? undefined,
+      paymentMethodCustom: i.paymentMethodCustom ?? undefined,
     }));
     return NextResponse.json({
       ...existing,
@@ -251,6 +255,8 @@ export async function PATCH(
             llcCategory: norm.llcCategory,
             llcState: norm.llcState,
             llcCustomCategory: norm.llcCustomCategory,
+            paymentMethod: norm.paymentMethod,
+            paymentMethodCustom: norm.paymentMethodCustom,
           })
           .where(eq(clientLineItems.id, item.id!));
       }
@@ -273,6 +279,8 @@ export async function PATCH(
           llcCategory: norm.llcCategory,
           llcState: norm.llcState,
           llcCustomCategory: norm.llcCustomCategory,
+          paymentMethod: norm.paymentMethod,
+          paymentMethodCustom: norm.paymentMethodCustom,
         });
       }
     }
@@ -354,6 +362,8 @@ export async function PATCH(
     llcCategory: i.llcCategory ?? undefined,
     llcState: i.llcState ?? undefined,
     llcCustomCategory: i.llcCustomCategory ?? undefined,
+    paymentMethod: i.paymentMethod ?? undefined,
+    paymentMethodCustom: i.paymentMethodCustom ?? undefined,
   }));
   const client = {
     ...updated,

@@ -39,8 +39,27 @@ export const lineItemInputSchema = z
     llcCategory: z.string().nullable().optional(),
     llcState: z.string().max(2).nullable().optional(),
     llcCustomCategory: z.string().max(200).nullable().optional(),
+    paymentMethod: z.string().max(100).nullable().optional(),
+    paymentMethodCustom: z.string().max(200).nullable().optional(),
   })
   .superRefine((item, ctx) => {
+    // Validação de paymentMethod (obrigatório para todos os itens)
+    if (!item.paymentMethod || String(item.paymentMethod).trim().length < 1) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Forma de pagamento é obrigatória",
+        path: ["paymentMethod"],
+      });
+    } else if (item.paymentMethod === "Outro") {
+      if (!item.paymentMethodCustom || String(item.paymentMethodCustom).trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Especifique a forma de pagamento",
+          path: ["paymentMethodCustom"],
+        });
+      }
+    }
+
     // Validações para LLC
     if (item.kind === "LLC") {
       if (!item.llcCategory || String(item.llcCategory).trim().length < 1) {
@@ -231,7 +250,8 @@ export const createClientSchema = z
     commercial: commercialSdrSchema.optional(),
     sdr: commercialSdrSchema.optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
-    paymentMethod: z.string().min(1, "Forma de pagamento é obrigatória").max(100),
+    /** @deprecated Use lineItems[].paymentMethod. Mantido para compatibilidade backwards. */
+    paymentMethod: z.string().max(100).optional(),
     anonymous: z.boolean().optional().default(false),
     holding: z.boolean().optional().default(false),
     affiliate: z.boolean().optional().default(false),
@@ -254,7 +274,8 @@ export const updateClientSchema = z
     commercial: commercialSdrSchema.optional(),
     sdr: commercialSdrSchema.optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
-    paymentMethod: z.string().min(1, "Forma de pagamento é obrigatória").max(100),
+    /** @deprecated Use lineItems[].paymentMethod. Mantido para compatibilidade backwards. */
+    paymentMethod: z.string().max(100).optional(),
     anonymous: z.boolean().optional(),
     holding: z.boolean().optional(),
     affiliate: z.boolean().optional(),
