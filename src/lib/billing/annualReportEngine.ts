@@ -129,6 +129,7 @@ function calculateDueDate(
   if (!rule) return null;
 
   const formationMonth = formationDate.getUTCMonth(); // 0-11
+  const formationDay = formationDate.getUTCDate();
 
   switch (rule.dueType) {
     case "fixed-date":
@@ -136,25 +137,42 @@ function calculateDueDate(
       const fixedDay = rule.day ?? getLastDayOfMonth(periodYear, rule.month);
       return new Date(Date.UTC(periodYear, rule.month - 1, fixedDay));
 
-    case "anniversary-month":
-      const anniversaryDay = rule.day ?? getLastDayOfMonth(periodYear, formationMonth + 1);
-      return new Date(Date.UTC(periodYear, formationMonth, anniversaryDay));
+    case "anniversary-month-end":
+      // Último dia do mês de aniversário
+      const lastDayEnd = getLastDayOfMonth(periodYear, formationMonth + 1);
+      return new Date(Date.UTC(periodYear, formationMonth, lastDayEnd));
+
+    case "anniversary-month-start":
+      // 1º dia do mês de aniversário
+      return new Date(Date.UTC(periodYear, formationMonth, 1));
 
     case "anniversary-quarter":
       const quarter = Math.floor(formationMonth / 3) + 1; // 1-4
       return getLastDayOfQuarter(periodYear, quarter);
 
+    case "month-before-anniversary":
+      // Mês anterior ao aniversário (último dia do mês anterior)
+      const prevMonth = formationMonth === 0 ? 11 : formationMonth - 1;
+      const prevYear = formationMonth === 0 ? periodYear - 1 : periodYear;
+      const lastDayPrev = getLastDayOfMonth(prevYear, prevMonth + 1);
+      return new Date(Date.UTC(prevYear, prevMonth, lastDayPrev));
+
     case "after-formation-days":
       if (rule.offsetDays == null) return null;
       const baseDate = new Date(formationDate);
       baseDate.setUTCDate(baseDate.getUTCDate() + rule.offsetDays);
-      // Ajustar para o ano do período
-      baseDate.setUTCFullYear(periodYear);
-      return baseDate;
+      // Para o primeiro ano, usar a data calculada; para anos seguintes, usar mês/dia de formação
+      if (periodYear === formationDate.getUTCFullYear()) {
+        return baseDate;
+      }
+      // Anos seguintes (bienal): usar mês de aniversário
+      return new Date(Date.UTC(periodYear, formationMonth, formationDay));
 
     case "fiscal-month-4":
-      // Requer fiscalYearStartMonth do cliente - não implementado automaticamente
-      return null;
+      // Assume ano fiscal = ano calendário (Jan-Dec)
+      // 4º mês = Abril, dia especificado na regra ou 1º
+      const fiscalDay = rule.day ?? 1;
+      return new Date(Date.UTC(periodYear, 3, fiscalDay)); // Abril = mês 3
 
     default:
       return null;
