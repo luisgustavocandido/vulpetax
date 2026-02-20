@@ -187,7 +187,6 @@ export async function ensureAnnualReportObligations({
 }: { windowMonths?: number } = {}): Promise<{ created: number; updated: number }> {
   const today = new Date();
   const todayStr = TODAY_ISO();
-  const currentYear = today.getUTCFullYear();
   const windowEnd = new Date(today);
   windowEnd.setUTCMonth(windowEnd.getUTCMonth() + windowMonths);
   const windowEndYear = windowEnd.getUTCFullYear();
@@ -231,16 +230,21 @@ export async function ensureAnnualReportObligations({
     const formationDate = await resolveFormationDate(client.id);
     if (!formationDate) continue;
 
-    // Gerar obrigações para os anos no window
-    const startYear = currentYear;
+    const formationYear = formationDate.getUTCFullYear();
+
+    // Gerar obrigações desde a formação até o futuro (windowMonths)
+    // O primeiro annual report geralmente é no ano seguinte à formação
+    // Mas para alguns estados (ex: CA com 90 dias), pode ser no mesmo ano
+    const startYear = formationYear;
     const endYear = windowEndYear + (rule.frequency === "Bienal" ? 1 : 0);
 
     for (let year = startYear; year <= endYear; year++) {
-      // Para bienais, pular anos ímpares após o primeiro
+      // Para bienais, pular anos que não são ciclo bienal
       if (rule.frequency === "Bienal") {
-        const formationYear = formationDate.getUTCFullYear();
         const yearsSinceFormation = year - formationYear;
-        if (yearsSinceFormation % 2 !== 0) continue;
+        // Bienal: cada 2 anos após a formação (0, 2, 4, 6...)
+        // Porém o primeiro pode ser no ano da formação dependendo do estado
+        if (yearsSinceFormation > 0 && yearsSinceFormation % 2 !== 0) continue;
       }
 
       const dueDate = calculateDueDate(rule, formationDate, year);
