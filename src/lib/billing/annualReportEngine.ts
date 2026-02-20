@@ -3,7 +3,7 @@
  */
 import { db } from "@/db";
 import { clients, clientLineItems, annualReportObligations } from "@/db/schema";
-import { and, eq, sql, isNull, desc } from "drizzle-orm";
+import { and, eq, sql, isNull, desc, asc } from "drizzle-orm";
 import { getAnnualReportRule, hasAnnualReportObligation } from "@/constants/annualReportRules";
 import { getStateByCode, findStateByName } from "@/constants/usStates";
 
@@ -64,8 +64,16 @@ async function resolveLLCState(clientId: string): Promise<string | null> {
 }
 
 /**
+ * Data de formação padrão para LLCs sem sale_date.
+ * Usado para gerar obrigações retroativas quando a data real é desconhecida.
+ */
+const DEFAULT_FORMATION_DATE = new Date(Date.UTC(2022, 0, 1)); // 2022-01-01
+
+/**
  * Calcula a data de formação (formationDate) para um cliente.
- * Usa saleDate do item LLC mais recente, fallback para createdAt do cliente.
+ * Prioridade:
+ * 1. saleDate do item LLC (mais antigo)
+ * 2. Data de formação padrão (2022-01-01) para gerar obrigações retroativas
  */
 async function resolveFormationDate(clientId: string): Promise<Date | null> {
   const llcItem = await db
@@ -76,30 +84,19 @@ async function resolveFormationDate(clientId: string): Promise<Date | null> {
     .where(
       and(
         eq(clientLineItems.clientId, clientId),
-        eq(clientLineItems.kind, "LLC"),
+        sql`LOWER(${clientLineItems.kind}) = 'llc'`,
         sql`${clientLineItems.saleDate} IS NOT NULL`
       )
     )
-    .orderBy(desc(clientLineItems.saleDate))
+    .orderBy(asc(clientLineItems.saleDate))
     .limit(1);
 
   if (llcItem.length > 0 && llcItem[0].saleDate) {
     return parseIso(llcItem[0].saleDate);
   }
 
-  const client = await db
-    .select({
-      createdAt: clients.createdAt,
-    })
-    .from(clients)
-    .where(eq(clients.id, clientId))
-    .limit(1);
-
-  if (client.length > 0 && client[0].createdAt) {
-    return client[0].createdAt;
-  }
-
-  return null;
+  // Se não houver saleDate, usar data de formação padrão para gerar retroativos
+  return DEFAULT_FORMATION_DATE;
 }
 
 /**
