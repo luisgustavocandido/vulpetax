@@ -40,12 +40,16 @@ export type SerializedPartner = {
   state?: string;
   postalCode?: string;
   country?: string;
+  isPayer: boolean;
+  customerId?: string | null;
+  customer?: { id: string; fullName: string; email: string | null; phone: string | null };
 };
 
 /** Cliente inicial para edição — apenas primitivos e arrays serializáveis */
 export type InitialClientForEdit = {
   companyName: string;
   customerCode?: string;
+  personGroupId?: string | null;
   paymentDate: string;
   commercial: string;
   sdr: string;
@@ -135,6 +139,7 @@ function serializeItem(raw: unknown): SerializedLineItem {
 function serializePartner(raw: unknown): SerializedPartner {
   const o = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const pct = toNumber(o.percentage);
+  const customer = o.customer && typeof o.customer === "object" ? (o.customer as Record<string, unknown>) : null;
   return {
     fullName: toString(o.fullName, ""),
     role: toString(o.role, "Socio"),
@@ -147,6 +152,16 @@ function serializePartner(raw: unknown): SerializedPartner {
     state: o.state != null ? toString(o.state) : undefined,
     postalCode: o.postalCode != null ? toString(o.postalCode) : undefined,
     country: o.country != null ? toString(o.country) : undefined,
+    isPayer: toBoolean(o.isPayer),
+    customerId: o.customerId != null && typeof o.customerId === "string" ? o.customerId : undefined,
+    customer: customer
+      ? {
+          id: toString(customer.id, ""),
+          fullName: toString(customer.fullName, ""),
+          email: customer.email != null ? toString(customer.email) : null,
+          phone: customer.phone != null ? toString(customer.phone) : null,
+        }
+      : undefined,
   };
 }
 
@@ -167,6 +182,7 @@ export function clientToInitialClient(raw: unknown): InitialClientForEdit {
   return {
     companyName: toString(c.companyName, ""),
     customerCode: c.customerCode != null ? toString(c.customerCode) : undefined,
+    personGroupId: c.personGroupId != null && typeof c.personGroupId === "string" ? c.personGroupId : undefined,
     paymentDate: toIsoDateString(c.paymentDate) || toString(c.paymentDate, ""),
     commercial: toString(c.commercial, ""),
     sdr: toString(c.sdr, ""),

@@ -29,6 +29,10 @@ export async function middleware(request: NextRequest) {
     if (
       pathname === "/clients" ||
       pathname.startsWith("/clients/") ||
+      pathname === "/empresas" ||
+      pathname.startsWith("/empresas/") ||
+      pathname === "/clientes" ||
+      pathname.startsWith("/clientes/") ||
       pathname === "/dashboard" ||
       pathname.startsWith("/dashboard/") ||
       pathname === "/billing" ||
@@ -44,11 +48,11 @@ export async function middleware(request: NextRequest) {
   const cookieValue = request.cookies.get(getSessionCookieName())?.value;
   const session = await verifySessionValue(cookieValue);
 
-  // /login é público, mas se já houver sessão válida, redireciona para /clients
+  // /login é público, mas se já houver sessão válida, redireciona para /empresas
   if (pathname === "/login" || pathname.startsWith("/login/")) {
     if (session) {
       const destination =
-        request.nextUrl.searchParams.get("callbackUrl") || "/clients";
+        request.nextUrl.searchParams.get("callbackUrl") || "/empresas";
       return NextResponse.redirect(new URL(destination, getRequestOrigin(request)));
     }
     return NextResponse.next();
@@ -69,6 +73,10 @@ export async function middleware(request: NextRequest) {
 
   const isProtectedClients =
     pathname === "/clients" || pathname.startsWith("/clients/");
+  const isProtectedEmpresas =
+    pathname === "/empresas" || pathname.startsWith("/empresas/");
+  const isProtectedClientes =
+    pathname === "/clientes" || pathname.startsWith("/clientes/");
   const isProtectedDashboard =
     pathname === "/dashboard" || pathname.startsWith("/dashboard/");
   const isProtectedTax =
@@ -77,7 +85,7 @@ export async function middleware(request: NextRequest) {
     pathname === "/billing" || pathname.startsWith("/billing/");
   const isApi = pathname.startsWith("/api/");
 
-  if (isProtectedClients || isProtectedDashboard || isProtectedTax || isProtectedBilling || isApi) {
+  if (isProtectedClients || isProtectedEmpresas || isProtectedClientes || isProtectedDashboard || isProtectedTax || isProtectedBilling || isApi) {
     if (!session) {
       if (isApi) {
         return NextResponse.json(
@@ -92,13 +100,13 @@ export async function middleware(request: NextRequest) {
   }
 
   const res = NextResponse.next();
-  if (isProtectedClients || isProtectedDashboard || isProtectedTax || isProtectedBilling) {
+  if (isProtectedClients || isProtectedEmpresas || isProtectedClientes || isProtectedDashboard || isProtectedTax || isProtectedBilling) {
     res.headers.set("Cache-Control", "no-store");
   }
   return res;
 }
 
 export const config = {
-  matcher: ["/login", "/login/:path*", "/clients", "/clients/:path*", "/dashboard", "/dashboard/:path*", "/billing", "/billing/:path*", "/tax", "/tax/:path*", "/api/:path*"],
+  matcher: ["/login", "/login/:path*", "/clients", "/clients/:path*", "/empresas", "/empresas/:path*", "/clientes", "/clientes/:path*", "/dashboard", "/dashboard/:path*", "/billing", "/billing/:path*", "/tax", "/tax/:path*", "/api/:path*"],
 };
 

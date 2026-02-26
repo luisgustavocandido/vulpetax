@@ -65,6 +65,65 @@ export const users = pgTable("users", {
     .defaultNow(),
 });
 
+// --- person_groups (cadastro explícito de pessoa; id = personGroupId usado em clients) ---
+export const personGroups = pgTable("person_groups", {
+  id: uuid("id").primaryKey().defaultRandom(),
+  fullName: text("full_name").notNull(),
+  givenName: text("given_name").notNull(),
+  surName: text("sur_name").notNull(),
+  citizenshipCountry: text("citizenship_country").notNull(),
+  phone: text("phone"),
+  email: text("email"),
+  addressLine1: text("address_line1"),
+  addressLine2: text("address_line2"),
+  city: text("city"),
+  stateProvince: text("state_province"),
+  postalCode: text("postal_code"),
+  country: text("country"),
+  createdAt: timestamp("created_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+  updatedAt: timestamp("updated_at", { withTimezone: true })
+    .notNull()
+    .defaultNow(),
+});
+
+export type PersonGroupInsert = typeof personGroups.$inferInsert;
+
+// --- customers (Clientes Pagadores — base própria para vincular ao partner) ---
+export const customers = pgTable(
+  "customers",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    fullName: text("full_name").notNull(),
+    givenName: text("given_name").notNull(),
+    surName: text("sur_name").notNull(),
+    citizenshipCountry: text("citizenship_country").notNull(),
+    phone: text("phone"),
+    email: text("email").notNull(),
+    addressLine1: text("address_line1").notNull(),
+    addressLine2: text("address_line2"),
+    city: text("city").notNull(),
+    stateProvince: text("state_province").notNull(),
+    postalCode: text("postal_code").notNull(),
+    country: text("country").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("customers_email_idx").on(table.email),
+    index("customers_phone_idx").on(table.phone),
+    index("customers_full_name_idx").on(sql`lower(${table.fullName})`),
+  ]
+);
+
+export type CustomerInsert = typeof customers.$inferInsert;
+export type Customer = typeof customers.$inferSelect;
+
 // --- clients (Pós Venda LLC) ---
 export const clients = pgTable(
   "clients",
@@ -101,6 +160,7 @@ export const clients = pgTable(
   createdBy: uuid("created_by").references(() => users.id),
   updatedBy: uuid("updated_by").references(() => users.id),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
+  personGroupId: uuid("person_group_id"),
   },
   (table) => [
     index("clients_company_name_normalized_idx")
@@ -109,6 +169,7 @@ export const clients = pgTable(
     index("idx_clients_tax_form_source")
       .on(table.taxFormSource)
       .where(sql`${table.deletedAt} IS NULL`),
+    index("clients_person_group_id_idx").on(table.personGroupId),
   ]
 );
 
@@ -248,6 +309,8 @@ export const clientPartners = pgTable("client_partners", {
   state: text("state"),
   postalCode: text("postal_code"),
   country: text("country"),
+  isPayer: boolean("is_payer").notNull().default(false),
+  customerId: uuid("customer_id").references(() => customers.id, { onDelete: "set null" }),
   createdAt: timestamp("created_at", { withTimezone: true })
     .notNull()
     .defaultNow(),
@@ -299,6 +362,69 @@ export const importHistory = pgTable("import_history", {
     .notNull()
     .defaultNow(),
 });
+
+// --- processes (checklists por cliente/serviço) ---
+export const processes = pgTable(
+  "processes",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    clientId: uuid("client_id")
+      .notNull()
+      .references(() => clients.id, { onDelete: "cascade" }),
+    lineItemId: uuid("line_item_id").references(() => clientLineItems.id, {
+      onDelete: "set null",
+    }),
+    kind: varchar("kind", { length: 50 }).notNull(),
+    status: varchar("status", { length: 20 })
+      .notNull()
+      .default("open")
+      .$type<"open" | "in_progress" | "done">(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("processes_client_id_idx").on(table.clientId),
+    index("processes_line_item_id_idx").on(table.lineItemId),
+    index("processes_status_idx").on(table.status),
+    unique("processes_client_kind_unique").on(table.clientId, table.kind),
+  ]
+);
+
+// --- process_steps (etapas de cada processo) ---
+export const processSteps = pgTable(
+  "process_steps",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    processId: uuid("process_id")
+      .notNull()
+      .references(() => processes.id, { onDelete: "cascade" }),
+    order: integer("order").notNull(),
+    title: text("title").notNull(),
+    assignee: varchar("assignee", { length: 100 }),
+    department: varchar("department", { length: 50 }),
+    status: varchar("status", { length: 20 })
+      .notNull()
+      .default("pending")
+      .$type<"pending" | "in_progress" | "done">(),
+    doneAt: timestamp("done_at", { withTimezone: true }),
+    startedAt: timestamp("started_at", { withTimezone: true }),
+    expectedDays: integer("expected_days").notNull().default(3),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [
+    index("process_steps_process_id_idx").on(table.processId),
+    unique("process_steps_process_order_unique").on(table.processId, table.order),
+  ]
+);
 
 // --- TAX (Não Residentes) - Formulário Form 5472 + 1120 ---
 
@@ -491,10 +617,18 @@ export const billingChargesRelations = relations(billingCharges, ({ one }) => ({
   }),
 }));
 
+export const customersRelations = relations(customers, ({ many }) => ({
+  clientPartners: many(clientPartners),
+}));
+
 export const clientPartnersRelations = relations(clientPartners, ({ one }) => ({
   client: one(clients, {
     fields: [clientPartners.clientId],
     references: [clients.id],
+  }),
+  customer: one(customers, {
+    fields: [clientPartners.customerId],
+    references: [customers.id],
   }),
 }));
 

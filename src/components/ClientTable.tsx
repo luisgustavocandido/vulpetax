@@ -18,6 +18,10 @@ type ClientTableProps = {
   orderPaymentDate?: string | null;
   /** Parâmetros atuais da URL para montar o link de ordenação (page, limit, filtros, etc.) */
   searchParamsForSort?: Record<string, string>;
+  /** Base path para links (ex: /clients ou /empresas). Default: /clients */
+  basePath?: string;
+  /** Mensagem quando não há registros. Default: Nenhum cliente encontrado. */
+  emptyMessage?: string;
 };
 
 function formatDate(s: string | null): string {
@@ -30,6 +34,7 @@ function formatDate(s: string | null): string {
 }
 
 function buildSortUrl(
+  basePath: string,
   currentOrder: string | null | undefined,
   searchParams: Record<string, string> | undefined
 ): string {
@@ -43,7 +48,7 @@ function buildSortUrl(
     params.delete("orderPaymentDate");
   }
   const q = params.toString();
-  return `/clients${q ? `?${q}` : ""}`;
+  return `${basePath}${q ? `?${q}` : ""}`;
 }
 
 function sortLabel(order: string | null | undefined): string {
@@ -56,16 +61,18 @@ export function ClientTable({
   clients,
   orderPaymentDate = null,
   searchParamsForSort = {},
+  basePath = "/clients",
+  emptyMessage = "Nenhum cliente encontrado.",
 }: ClientTableProps) {
   if (clients.length === 0) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-8 text-center text-gray-500">
-        Nenhum cliente encontrado.
+        {emptyMessage}
       </div>
     );
   }
 
-  const sortHref = buildSortUrl(orderPaymentDate, searchParamsForSort);
+  const sortHref = buildSortUrl(basePath, orderPaymentDate, searchParamsForSort);
 
   return (
     <div className="overflow-x-auto rounded-lg border border-gray-200 bg-white">
@@ -123,7 +130,7 @@ export function ClientTable({
                 {c.paymentMethod ?? "—"}
               </td>
               <td className="whitespace-nowrap px-4 py-2 text-right text-sm">
-                <Link href={`/clients/${c.id}`} className="text-blue-600 hover:text-blue-800">
+                <Link href={`${basePath}/${c.id}`} className="text-blue-600 hover:text-blue-800">
                   Editar
                 </Link>
               </td>

@@ -6,9 +6,11 @@ import { usePathname } from "next/navigation";
 type Props = {
   clientId: string;
   clientName: string;
+  /** Base path para links (ex: /clients ou /empresas). Default: /clients */
+  basePath?: string;
 };
 
-export function ClientTabs({ clientId, clientName }: Props) {
+export function ClientTabs({ clientId, clientName, basePath = "/clients" }: Props) {
   const pathname = usePathname();
   const isTax = pathname.includes("/tax");
 
@@ -17,7 +19,7 @@ export function ClientTabs({ clientId, clientName }: Props) {
       <div className="mb-2 text-sm font-medium text-slate-600">{clientName}</div>
       <div className="flex gap-1 border-b border-slate-200">
         <Link
-          href={`/clients/${clientId}`}
+          href={`${basePath}/${clientId}`}
           className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
             !isTax
               ? "border-slate-800 text-slate-900"
@@ -27,7 +29,7 @@ export function ClientTabs({ clientId, clientName }: Props) {
           Dados
         </Link>
         <Link
-          href={`/clients/${clientId}/tax`}
+          href={`${basePath}/${clientId}/tax`}
           className={`-mb-px border-b-2 px-4 py-2 text-sm font-medium ${
             isTax
               ? "border-slate-800 text-slate-900"

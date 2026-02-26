@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { randomBytes } from "crypto";
+import { randomBytes, randomUUID } from "crypto";
 import { sql, and, eq, desc } from "drizzle-orm";
 import { db } from "@/db";
 import {
@@ -8,21 +8,19 @@ import {
   clientPartners,
   type ClientInsert,
   type CommercialSdr,
-  type PartnerRole,
 } from "@/db/schema";
 import { isNull } from "drizzle-orm";
 import { getRequestMeta } from "@/lib/requestMeta";
 import { logAudit, diffChangedFields } from "@/lib/audit";
-import {
-  createClientSchema,
-  percentToBasisPoints,
-} from "@/lib/clientSchemas";
+import { createClientSchema } from "@/lib/clientSchemas";
 import {
   normalizeCompanyName,
   resolveNameDuplicates,
 } from "@/lib/clientDedupe";
 import { normalizeLineItemForDb } from "@/lib/normalizeLineItemForDb";
 import { normalizeLegacyToLineItemInputArray } from "@/types/lineItems";
+import { ensureLlcProcessForClient } from "@/lib/processes/engine";
+import { resolvePartnerForInsert } from "@/lib/clients/resolvePartnerForInsert";
 
 const COMMERCIAL_VALUES = ["João", "Pablo", "Gabriel", "Gustavo"] as const;
 
@@ -52,6 +50,7 @@ export async function GET(request: NextRequest) {
     const express = searchParams.get("express");
     const hasPartners = searchParams.get("hasPartners");
     const orderPaymentDate = searchParams.get("orderPaymentDate")?.toLowerCase();
+    const customerId = searchParams.get("customerId")?.trim();
 
     const conditions = [isNull(clients.deletedAt)];
 
@@ -91,6 +90,11 @@ export async function GET(request: NextRequest) {
     } else if (hasPartners === "false") {
       conditions.push(
         sql`NOT EXISTS (SELECT 1 FROM client_partners cp WHERE cp.client_id = ${clients.id})`
+      );
+    }
+    if (customerId) {
+      conditions.push(
+        sql`EXISTS (SELECT 1 FROM client_partners cp WHERE cp.client_id = ${clients.id} AND cp.is_payer = true AND cp.customer_id = ${customerId})`
       );
     }
     const where = and(...conditions);
@@ -199,6 +203,10 @@ export async function POST(request: NextRequest) {
   const meta = getRequestMeta(request);
   const data = parsed.data;
 
+  if (process.env.NODE_ENV === "development") {
+    console.log("[POST /api/clients] partners count:", data.partners?.length ?? 0, data.partners);
+  }
+
   const companyNameNormalized = normalizeCompanyName(data.companyName);
   const customerCode =
     data.customerCode?.trim() ||
@@ -207,7 +215,30 @@ export async function POST(request: NextRequest) {
   let result: { id: string; created: boolean; deduped: boolean };
   try {
     result = await db.transaction(async (tx) => {
-      const winnerId = await resolveNameDuplicates(tx, companyNameNormalized, meta);
+      let personGroupId: string | null = data.personGroupId ?? null;
+      if (!personGroupId && data.sourceClientId) {
+        const [source] = await tx
+          .select()
+          .from(clients)
+          .where(eq(clients.id, data.sourceClientId!))
+          .limit(1);
+        if (!source || source.deletedAt) {
+          const err = new Error("SOURCE_CLIENT_NOT_FOUND") as Error & { code?: string };
+          err.code = "SOURCE_CLIENT_NOT_FOUND";
+          throw err;
+        }
+        if (source.personGroupId) {
+          personGroupId = source.personGroupId;
+        } else {
+          personGroupId = randomUUID();
+          await tx
+            .update(clients)
+            .set({ personGroupId, updatedAt: new Date() })
+            .where(eq(clients.id, source.id));
+        }
+      }
+
+      const winnerId = data.personGroupId ? null : await resolveNameDuplicates(tx, companyNameNormalized, meta);
 
       if (winnerId) {
         const [existing] = await tx.select().from(clients).where(eq(clients.id, winnerId)).limit(1);
@@ -264,20 +295,15 @@ export async function POST(request: NextRequest) {
         }
 
         await tx.delete(clientPartners).where(eq(clientPartners.clientId, winnerId));
+        let customerReused = false;
         for (const p of data.partners ?? []) {
+          const resolved = await resolvePartnerForInsert(tx as unknown as typeof db, p);
+          if (resolved.customerReused) customerReused = true;
+          // eslint-disable-next-line @typescript-eslint/no-unused-vars -- omit customerReused from insert
+          const { customerReused: _omit, ...resolvedRow } = resolved;
           await tx.insert(clientPartners).values({
             clientId: winnerId,
-            fullName: p.fullName,
-            role: p.role as PartnerRole,
-            percentageBasisPoints: percentToBasisPoints(p.percentage),
-            phone: p.phone ?? null,
-            email: p.email?.trim() || null,
-            addressLine1: p.addressLine1?.trim() || null,
-            addressLine2: p.addressLine2?.trim() || null,
-            city: p.city?.trim() || null,
-            state: p.state?.trim() || null,
-            postalCode: p.postalCode?.trim() || null,
-            country: p.country?.trim() || null,
+            ...resolvedRow,
           });
         }
 
@@ -296,9 +322,10 @@ export async function POST(request: NextRequest) {
             meta,
           });
         }
-        return { id: winnerId, created: false, deduped: true };
+        return { id: winnerId, created: false, deduped: true, customerReused };
       }
 
+      const resolvedPersonGroupId = personGroupId ?? randomUUID();
       const clientValues: ClientInsert = {
         companyName: data.companyName,
         companyNameNormalized,
@@ -320,6 +347,7 @@ export async function POST(request: NextRequest) {
         personalState: data.personalState?.trim() || null,
         personalPostalCode: data.personalPostalCode?.trim() || null,
         personalCountry: data.personalCountry?.trim() || null,
+        personGroupId: resolvedPersonGroupId,
       };
       const [row] = await tx.insert(clients).values(clientValues).returning({ id: clients.id });
       if (!row) throw new Error("Insert failed");
@@ -348,20 +376,15 @@ export async function POST(request: NextRequest) {
         });
       }
 
+      let customerReused = false;
       for (const p of data.partners ?? []) {
+        const resolved = await resolvePartnerForInsert(tx as unknown as typeof db, p);
+        if (resolved.customerReused) customerReused = true;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- omit customerReused from insert
+        const { customerReused: _omit, ...resolvedRow } = resolved;
         await tx.insert(clientPartners).values({
           clientId: row.id,
-          fullName: p.fullName,
-          role: p.role as PartnerRole,
-          percentageBasisPoints: percentToBasisPoints(p.percentage),
-          phone: p.phone ?? null,
-          email: p.email?.trim() || null,
-          addressLine1: p.addressLine1?.trim() || null,
-          addressLine2: p.addressLine2?.trim() || null,
-          city: p.city?.trim() || null,
-          state: p.state?.trim() || null,
-          postalCode: p.postalCode?.trim() || null,
-          country: p.country?.trim() || null,
+          ...resolvedRow,
         });
       }
 
@@ -379,10 +402,16 @@ export async function POST(request: NextRequest) {
         newValues,
         meta,
       });
-      return { id: row.id, created: true, deduped: false };
+      return { id: row.id, created: true, deduped: false, customerReused };
     });
   } catch (err: unknown) {
     const code = (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "SOURCE_CLIENT_NOT_FOUND") {
+      return NextResponse.json({ error: "Cliente de referência não encontrado" }, { status: 404 });
+    }
+    if (code === "CUSTOMER_NOT_FOUND") {
+      return NextResponse.json({ error: "Cliente pagador não encontrado" }, { status: 404 });
+    }
     if (code === "23505") {
       return NextResponse.json(
         { error: "Código do cliente já cadastrado", details: { customerCode: ["Já existe um registro com este código"] } },
@@ -393,6 +422,8 @@ export async function POST(request: NextRequest) {
   }
 
   const clientId = result.id;
+  await ensureLlcProcessForClient(clientId);
+
   const [clientRow] = await db.select().from(clients).where(eq(clients.id, clientId)).limit(1);
   const lineItemsRows = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, clientId));
   const partnersRows = await db.select().from(clientPartners).where(eq(clientPartners.clientId, clientId));
@@ -435,9 +466,10 @@ export async function POST(request: NextRequest) {
           state: p.state ?? undefined,
           postalCode: p.postalCode ?? undefined,
           country: p.country ?? undefined,
+          isPayer: p.isPayer ?? false,
         })),
       }
     : null;
 
-  return NextResponse.json({ client: client ?? undefined, id: clientId, created: result.created, deduped: result.deduped }, { status: 201 });
+  return NextResponse.json({ client: client ?? undefined, id: clientId, created: result.created, deduped: result.deduped, customerReused: (result as { customerReused?: boolean }).customerReused === true }, { status: 201 });
 }

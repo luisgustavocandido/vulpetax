@@ -14,9 +14,11 @@ type TaxForm = {
 type Props = {
   clientId: string;
   currentTaxFormId: string;
+  /** Base path para links (ex: /clients ou /empresas). Default: /clients */
+  basePath?: string;
 };
 
-export function TaxFormSelector({ clientId, currentTaxFormId }: Props) {
+export function TaxFormSelector({ clientId, currentTaxFormId, basePath = "/clients" }: Props) {
   const [forms, setForms] = useState<TaxForm[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -39,7 +41,7 @@ export function TaxFormSelector({ clientId, currentTaxFormId }: Props) {
       <div className="mb-3 flex items-center justify-between">
         <h2 className="text-sm font-semibold text-slate-700">Formulários TAX</h2>
         <Link
-          href={`/clients/${clientId}/tax/new`}
+          href={`${basePath}/${clientId}/tax/new`}
           className="rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-800 transition-colors"
         >
           + Adicionar novo TAX
@@ -52,7 +54,7 @@ export function TaxFormSelector({ clientId, currentTaxFormId }: Props) {
           {forms.map((form) => (
             <Link
               key={form.id}
-              href={`/clients/${clientId}/tax/${form.id}`}
+              href={`${basePath}/${clientId}/tax/${form.id}`}
               className={`rounded-md px-3 py-1.5 text-xs font-medium ${
                 form.id === currentTaxFormId
                   ? "bg-slate-900 text-white"

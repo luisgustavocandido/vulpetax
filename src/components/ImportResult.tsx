@@ -9,6 +9,10 @@ type ImportResultProps = {
   rowsImported: number;
   rowsErrors: number;
   errors: ImportError[];
+  /** Link "Voltar". Default: /clients */
+  backHref?: string;
+  /** Label do link. Default: Voltar para clientes */
+  backLabel?: string;
 };
 
 /**
@@ -19,6 +23,8 @@ export function ImportResult({
   rowsImported,
   rowsErrors,
   errors,
+  backHref = "/clients",
+  backLabel = "Voltar para clientes",
 }: ImportResultProps) {
   const displayErrors = errors.slice(0, 100);
 
@@ -62,10 +68,10 @@ export function ImportResult({
       )}
 
       <Link
-        href="/clients"
+        href={backHref}
         className="inline-block text-sm text-blue-600 hover:underline"
       >
-        Voltar para clientes
+        {backLabel}
       </Link>
     </div>
   );

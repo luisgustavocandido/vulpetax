@@ -1,11 +1,23 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useMemo } from "react";
 import { UNIQUE_COUNTRY_CODES } from "@/lib/countryCodes";
+
+function normalizeSearch(s: string): string {
+  return s
+    .trim()
+    .toLowerCase()
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
 
 type Props = {
   name: string;
   defaultValue?: string;
+  /** Valor controlado (ex.: react-hook-form). Quando passado, o componente é controlado. */
+  value?: string;
+  /** Chamado ao selecionar um país (valor = nome do país). Usar com value para controle externo. */
+  onChange?: (value: string) => void;
   required?: boolean;
   className?: string;
 };
@@ -16,26 +28,37 @@ type Props = {
 export function CountrySelectForAddress({
   name,
   defaultValue = "",
+  value: controlledValue,
+  onChange,
   required = false,
   className = "",
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState(() => {
+  const isControlled = controlledValue !== undefined;
+  const [internalSelected, setInternalSelected] = useState(() => {
     const found = UNIQUE_COUNTRY_CODES.find(
       (c) => c.name === defaultValue || c.name.toLowerCase() === defaultValue?.toLowerCase()
     );
     return found ?? null;
   });
+  const selected = isControlled
+    ? (UNIQUE_COUNTRY_CODES.find(
+        (c) => c.name === controlledValue || c.name.toLowerCase() === controlledValue?.toLowerCase()
+      ) ?? null)
+    : internalSelected;
   const containerRef = useRef<HTMLDivElement>(null);
 
-  const filtered = query.trim()
-    ? UNIQUE_COUNTRY_CODES.filter(
-        (c) =>
-          c.name.toLowerCase().includes(query.toLowerCase()) ||
-          c.code.includes(query.replace(/\D/g, ""))
-      )
-    : UNIQUE_COUNTRY_CODES;
+  const normalizedQuery = normalizeSearch(query);
+  const filtered = useMemo(() => {
+    if (!normalizedQuery) return UNIQUE_COUNTRY_CODES;
+    const codeDigits = query.replace(/\D/g, "");
+    return UNIQUE_COUNTRY_CODES.filter(
+      (c) =>
+        normalizeSearch(c.name).includes(normalizedQuery) ||
+        (codeDigits.length > 0 && c.code.replace(/\D/g, "").includes(codeDigits))
+    );
+  }, [normalizedQuery, query]);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -48,7 +71,8 @@ export function CountrySelectForAddress({
   }, []);
 
   function handleSelect(c: { code: string; name: string }) {
-    setSelected(c);
+    if (!isControlled) setInternalSelected(c);
+    onChange?.(c.name);
     setOpen(false);
     setQuery("");
   }
@@ -75,12 +99,26 @@ export function CountrySelectForAddress({
       </button>
 
       {open && (
-        <div className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg">
+        <div
+          className="absolute left-0 right-0 top-full z-50 mt-1 max-h-64 overflow-hidden rounded-lg border border-gray-200 bg-white shadow-lg"
+          onClick={(e) => e.stopPropagation()}
+          onKeyDown={(e) => e.stopPropagation()}
+        >
           <div className="border-b border-gray-100 p-2">
             <input
-              type="text"
+              type="search"
+              autoComplete="off"
               value={query}
               onChange={(e) => setQuery(e.target.value)}
+              onKeyDown={(e) => {
+                e.stopPropagation();
+                if (e.key === "Escape") {
+                  setOpen(false);
+                }
+                if (e.key === "Enter") {
+                  e.preventDefault();
+                }
+              }}
               placeholder="Buscar país..."
               className="w-full rounded border border-gray-200 px-2 py-1.5 text-sm placeholder:text-gray-400 focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
               autoFocus
@@ -88,7 +126,9 @@ export function CountrySelectForAddress({
           </div>
           <div className="max-h-48 overflow-y-auto py-1">
             {filtered.length === 0 ? (
-              <div className="px-3 py-4 text-center text-sm text-gray-500">Nenhum resultado</div>
+              <div className="px-3 py-4 text-center text-sm text-gray-500">
+                {normalizedQuery ? "Nenhum resultado" : "Digite para buscar..."}
+              </div>
             ) : (
               filtered.map((c) => (
                 <button

@@ -1,7 +1,6 @@
 import Link from "next/link";
 import { headers } from "next/headers";
 import { getBaseUrl } from "@/lib/api";
-import { TaxSyncPanel } from "@/components/tax/TaxSyncPanel";
 import { TaxRemoveButton } from "@/components/tax/TaxRemoveButton";
 import { TaxPageHeaderActions } from "@/components/tax/TaxPageHeaderActions";
 
@@ -73,7 +72,6 @@ export default async function TaxListPage({ searchParams }: PageProps) {
           </div>
           <TaxPageHeaderActions />
         </div>
-        <TaxSyncPanel />
       </div>
 
       <div className="mb-4 flex flex-wrap gap-2">

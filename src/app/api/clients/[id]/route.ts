@@ -5,12 +5,13 @@ import {
   clients,
   clientLineItems,
   clientPartners,
-  type PartnerRole,
+  customers,
 } from "@/db/schema";
 import { eq, inArray } from "drizzle-orm";
+import { resolvePartnerForInsert } from "@/lib/clients/resolvePartnerForInsert";
 import { getRequestMeta } from "@/lib/requestMeta";
 import { logAudit, diffChangedFields } from "@/lib/audit";
-import { updateClientSchema, percentToBasisPoints } from "@/lib/clientSchemas";
+import { updateClientSchema } from "@/lib/clientSchemas";
 import { normalizeCompanyName } from "@/lib/clientDedupe";
 import { normalizeLineItemForDb } from "@/lib/normalizeLineItemForDb";
 import { normalizeLegacyToLineItemInputArray } from "@/types/lineItems";
@@ -20,6 +21,64 @@ function dateToIsoString(value: Date | string | null | undefined): string | unde
   if (value == null) return undefined;
   if (typeof value === "string") return /^\d{4}-\d{2}-\d{2}/.test(value) ? value.slice(0, 10) : undefined;
   return value instanceof Date ? value.toISOString().slice(0, 10) : undefined;
+}
+
+type PartnerRow = {
+  id: string;
+  fullName: string;
+  role: string;
+  percentageBasisPoints: number;
+  phone: string | null;
+  email: string | null;
+  addressLine1: string | null;
+  addressLine2: string | null;
+  city: string | null;
+  state: string | null;
+  postalCode: string | null;
+  country: string | null;
+  isPayer: boolean;
+  customerId: string | null;
+};
+
+async function mapPartnersWithCustomers(partnersRows: PartnerRow[]) {
+  const customerIds = Array.from(
+    new Set(partnersRows.map((p) => p.customerId).filter((id): id is string => !!id))
+  );
+  const customersList =
+    customerIds.length > 0
+      ? await db
+          .select({
+            id: customers.id,
+            fullName: customers.fullName,
+            email: customers.email,
+            phone: customers.phone,
+          })
+          .from(customers)
+          .where(inArray(customers.id, customerIds))
+      : [];
+  const customerMap = new Map(customersList.map((c) => [c.id, c]));
+  return partnersRows.map((p) => {
+    const cust = p.customerId ? customerMap.get(p.customerId) : undefined;
+    return {
+      id: p.id,
+      fullName: p.fullName,
+      role: p.role,
+      percentage: p.percentageBasisPoints / 100,
+      phone: p.phone,
+      email: p.email ?? undefined,
+      addressLine1: p.addressLine1 ?? undefined,
+      addressLine2: p.addressLine2 ?? undefined,
+      city: p.city ?? undefined,
+      state: p.state ?? undefined,
+      postalCode: p.postalCode ?? undefined,
+      country: p.country ?? undefined,
+      isPayer: p.isPayer ?? false,
+      customerId: p.customerId ?? undefined,
+      customer: cust
+        ? { id: cust.id, fullName: cust.fullName, email: cust.email ?? null, phone: cust.phone ?? null }
+        : undefined,
+    };
+  });
 }
 
 export async function GET(
@@ -41,7 +100,7 @@ export async function GET(
     .from(clientLineItems)
     .where(eq(clientLineItems.clientId, id));
 
-  const partners = await db
+  const partnersRows = await db
     .select()
     .from(clientPartners)
     .where(eq(clientPartners.clientId, id));
@@ -67,24 +126,12 @@ export async function GET(
     paymentMethodCustom: i.paymentMethodCustom ?? undefined,
   }));
 
+  const partnersWithCustomer = await mapPartnersWithCustomers(partnersRows);
   return NextResponse.json({
     ...row,
     lineItems,
     items: lineItems,
-    partners: partners.map((p) => ({
-      id: p.id,
-      fullName: p.fullName,
-      role: p.role,
-      percentage: p.percentageBasisPoints / 100,
-      phone: p.phone,
-      email: p.email ?? undefined,
-      addressLine1: p.addressLine1 ?? undefined,
-      addressLine2: p.addressLine2 ?? undefined,
-      city: p.city ?? undefined,
-      state: p.state ?? undefined,
-      postalCode: p.postalCode ?? undefined,
-      country: p.country ?? undefined,
-    })),
+    partners: partnersWithCustomer,
   });
 }
 
@@ -164,7 +211,7 @@ export async function PATCH(
 
   if (!hasClientUpdates && !hasLineItemsInPayload && !hasPartners) {
     const itemsRows = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id));
-    const partnersRows = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
+    const partnersRowsNoUpdates = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
     const lineItemsPayload = itemsRows.map((i) => ({
       id: i.id,
       kind: i.kind,
@@ -185,24 +232,12 @@ export async function PATCH(
       paymentMethod: i.paymentMethod ?? undefined,
       paymentMethodCustom: i.paymentMethodCustom ?? undefined,
     }));
+    const partnersPayload = await mapPartnersWithCustomers(partnersRowsNoUpdates);
     return NextResponse.json({
       ...existing,
       lineItems: lineItemsPayload,
       items: lineItemsPayload,
-      partners: partnersRows.map((p) => ({
-        id: p.id,
-        fullName: p.fullName,
-        role: p.role,
-        percentage: p.percentageBasisPoints / 100,
-        phone: p.phone,
-        email: p.email ?? undefined,
-        addressLine1: p.addressLine1 ?? undefined,
-        addressLine2: p.addressLine2 ?? undefined,
-        city: p.city ?? undefined,
-        state: p.state ?? undefined,
-        postalCode: p.postalCode ?? undefined,
-        country: p.country ?? undefined,
-      })),
+      partners: partnersPayload,
     });
   }
 
@@ -223,7 +258,11 @@ export async function PATCH(
     console.log("[PATCH /api/clients/:id] lineItems sync: existingCount=", existingItems.length, "toCreate=", toCreate.length, "toUpdate=", toUpdate.length, "toDelete=", toDelete.length);
   }
 
-  const [updated] = await db.transaction(async (tx) => {
+  let updated: typeof existing;
+  let customerReused = false;
+  try {
+    [updated, customerReused] = await db.transaction(async (tx) => {
+    let customerReused = false;
     if (hasClientUpdates) {
       await tx
         .update(clients)
@@ -288,19 +327,13 @@ export async function PATCH(
     if (hasPartners) {
       await tx.delete(clientPartners).where(eq(clientPartners.clientId, id));
       for (const p of data.partners!) {
+        const resolved = await resolvePartnerForInsert(tx as unknown as typeof db, p);
+        if (resolved.customerReused) customerReused = true;
+        // eslint-disable-next-line @typescript-eslint/no-unused-vars -- omit customerReused from insert
+        const { customerReused: _omit, ...resolvedRow } = resolved;
         await tx.insert(clientPartners).values({
           clientId: id,
-          fullName: p.fullName,
-          role: p.role as PartnerRole,
-          percentageBasisPoints: percentToBasisPoints(p.percentage),
-          phone: p.phone ?? null,
-          email: p.email?.trim() || null,
-          addressLine1: p.addressLine1?.trim() || null,
-          addressLine2: p.addressLine2?.trim() || null,
-          city: p.city?.trim() || null,
-          state: p.state?.trim() || null,
-          postalCode: p.postalCode?.trim() || null,
-          country: p.country?.trim() || null,
+          ...resolvedRow,
         });
       }
     }
@@ -332,8 +365,15 @@ export async function PATCH(
         meta,
       });
     }
-    return [row];
-  });
+    return [row, customerReused] as const;
+    });
+  } catch (err: unknown) {
+    const code = (err as { code?: string })?.code ?? (err as { cause?: { code?: string } })?.cause?.code;
+    if (code === "CUSTOMER_NOT_FOUND") {
+      return NextResponse.json({ error: "Cliente pagador não encontrado" }, { status: 404 });
+    }
+    throw err;
+  }
 
   const items = await db.select().from(clientLineItems).where(eq(clientLineItems.clientId, id));
   const partners = await db.select().from(clientPartners).where(eq(clientPartners.clientId, id));
@@ -365,27 +405,15 @@ export async function PATCH(
     paymentMethod: i.paymentMethod ?? undefined,
     paymentMethodCustom: i.paymentMethodCustom ?? undefined,
   }));
+  const partnersPayload = await mapPartnersWithCustomers(partners);
   const client = {
     ...updated,
     lineItems: lineItemsPayload,
     items: lineItemsPayload,
-    partners: partners.map((p) => ({
-      id: p.id,
-      fullName: p.fullName,
-      role: p.role,
-      percentage: p.percentageBasisPoints / 100,
-      phone: p.phone,
-      email: p.email ?? undefined,
-      addressLine1: p.addressLine1 ?? undefined,
-      addressLine2: p.addressLine2 ?? undefined,
-      city: p.city ?? undefined,
-      state: p.state ?? undefined,
-      postalCode: p.postalCode ?? undefined,
-      country: p.country ?? undefined,
-    })),
+    partners: partnersPayload,
   };
 
-  return NextResponse.json({ client });
+  return NextResponse.json({ client, customerReused: customerReused === true });
 }
 
 export async function DELETE(

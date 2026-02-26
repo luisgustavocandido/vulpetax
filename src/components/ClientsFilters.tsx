@@ -17,6 +17,8 @@ type FilterValues = {
 
 type ClientsFiltersProps = {
   values: FilterValues;
+  /** Base path para form action e link Limpar (ex: /clients ou /empresas). Default: /clients */
+  basePath?: string;
 };
 
 const COMMERCIAL_OPTIONS = ["", "João", "Pablo", "Gabriel", "Gustavo"];
@@ -43,11 +45,11 @@ function hasAnyFilter(v: FilterValues): boolean {
   );
 }
 
-export function ClientsFilters({ values }: ClientsFiltersProps) {
+export function ClientsFilters({ values, basePath = "/clients" }: ClientsFiltersProps) {
   const anyFilter = hasAnyFilter(values);
 
   return (
-    <form method="GET" action="/clients" className="mb-4 space-y-4">
+    <form method="GET" action={basePath} className="mb-4 space-y-4">
       <input type="hidden" name="page" value="1" />
       <input type="hidden" name="limit" value={values.limit ?? "20"} />
       {values.orderPaymentDate && (
@@ -176,7 +178,7 @@ export function ClientsFilters({ values }: ClientsFiltersProps) {
           </button>
           {anyFilter && (
             <a
-              href="/clients?page=1&limit=20"
+              href={`${basePath}?page=1&limit=20`}
               className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
             >
               Limpar filtros

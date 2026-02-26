@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useForm, useFieldArray } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -103,12 +103,32 @@ const lineItemFormSchema = z.object({
   }
 });
 
+const customerInlineFormSchema = z.object({
+  fullName: z.string().min(1, "Nome completo obrigatório"),
+  givenName: z.string().min(1, "Given name obrigatório"),
+  surName: z.string().min(1, "Sobrenome obrigatório"),
+  citizenshipCountry: z.string().min(1, "Cidadania obrigatória"),
+  phone: z.string().optional().nullable(),
+  email: z.string().min(1, "E-mail obrigatório").email("E-mail inválido"),
+  address: z.object({
+    line1: z.string().min(1, "Endereço linha 1 obrigatório"),
+    line2: z.string().optional().nullable(),
+    city: z.string().min(1, "Cidade obrigatória"),
+    stateProvince: z.string().min(1, "Estado obrigatório"),
+    postalCode: z.string().min(1, "Código postal obrigatório"),
+    country: z.string().min(1, "País obrigatório"),
+  }),
+});
+
 const partnerSchema = z.object({
   fullName: z.string().min(1, "Nome obrigatório"),
   role: z.enum(PARTNER_ROLES as unknown as [string, ...string[]]),
   percentage: z.number().min(0).max(100),
   phone: z.string().optional(),
   email: z.string().optional(),
+  isPayer: z.boolean().optional().default(false),
+  customerId: z.string().uuid().optional().nullable(),
+  customerInline: customerInlineFormSchema.optional().nullable(),
   addressLine1: z.string().optional(),
   addressLine2: z.string().optional(),
   city: z.string().optional(),
@@ -143,6 +163,26 @@ const schema = z
   .refine(
     (data) => data.partners.reduce((acc, p) => acc + p.percentage, 0) <= 100,
     { message: "A soma das participações não pode exceder 100%", path: ["partners"] }
+  )
+  .refine(
+    (data) =>
+      data.partners.length === 0 ||
+      data.partners.filter((p) => p.isPayer === true).length === 1,
+    { message: "Selecione exatamente 1 sócio como Cliente (Pagador).", path: ["partners"] }
+  )
+  .refine(
+    (data) => {
+      const payer = data.partners.find((p) => p.isPayer === true);
+      if (!payer) return true;
+      const hasId = !!payer.customerId && String(payer.customerId).trim().length > 0;
+      const hasInline = payer.customerInline != null && typeof payer.customerInline === "object";
+      return hasId || hasInline;
+    },
+    {
+      message:
+        "O Cliente (Pagador) deve ter um cliente vinculado: busque um existente ou cadastre novo.",
+      path: ["partners"],
+    }
   );
 
 export type ClientFormData = z.infer<typeof schema>;
@@ -150,6 +190,10 @@ export type ClientFormData = z.infer<typeof schema>;
 type ClientFormProps = {
   initialData?: Partial<ClientFormData> & { lineItems?: ClientFormData["lineItems"]; partners?: ClientFormData["partners"] };
   clientId?: string;
+  /** Quando preenchido (modal "já possui empresa"), o POST envia para vincular novo cliente ao mesmo grupo da pessoa. */
+  sourceClientId?: string;
+  /** URL para redirecionar após salvar com sucesso. Default: /clients */
+  successRedirectPath?: string;
 };
 
 const EMPTY_LINE_ITEM: ClientFormData["lineItems"][number] = {
@@ -172,12 +216,46 @@ const EMPTY_LINE_ITEM: ClientFormData["lineItems"][number] = {
   paymentMethodCustom: null,
 };
 
-const EMPTY_PARTNER: ClientFormData["partners"][0] = {
+type CustomerFullDisplay = {
+  id: string;
+  fullName: string;
+  givenName: string;
+  surName: string;
+  citizenshipCountry: string;
+  phone: string | null;
+  email: string;
+  address: { line1: string; line2: string | null; city: string; stateProvince: string; postalCode: string; country: string };
+};
+
+type PartnerState = ClientFormData["partners"][0] & {
+  payerMode?: "existing" | "new" | null;
+  customerId?: string | null;
+  customerInline?: z.infer<typeof customerInlineFormSchema> | null;
+  customer?: { id: string; fullName: string; email: string | null; phone: string | null };
+  customerFull?: CustomerFullDisplay | null;
+};
+
+const DEFAULT_CUSTOMER_INLINE: z.infer<typeof customerInlineFormSchema> = {
+  fullName: "",
+  givenName: "",
+  surName: "",
+  citizenshipCountry: "",
+  phone: "",
+  email: "",
+  address: { line1: "", line2: null, city: "", stateProvince: "", postalCode: "", country: "" },
+};
+
+const EMPTY_PARTNER: PartnerState = {
   fullName: "",
   role: "Socio",
   percentage: 0,
   phone: "",
   email: "",
+  isPayer: false,
+  payerMode: null,
+  customerId: null,
+  customerInline: null,
+  customerFull: null,
   addressLine1: "",
   addressLine2: "",
   city: "",
@@ -212,14 +290,47 @@ function computeExpirationIsoFromSaleDate(iso: string): string | undefined {
   return addOneYear(sale).toISOString().slice(0, 10);
 }
 
-export function ClientForm({ initialData, clientId }: ClientFormProps) {
+export function ClientForm({ initialData, clientId, sourceClientId, successRedirectPath = "/clients" }: ClientFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Partial<Record<string, string>>>({});
   const [submitting, setSubmitting] = useState(false);
-  const [partners, setPartners] = useState<ClientFormData["partners"]>(
-    initialData?.partners?.length ? initialData.partners : [EMPTY_PARTNER]
-  );
+  const [toast, setToast] = useState<{ type: "success"; message: string } | null>(null);
+  const [addWizardOpen, setAddWizardOpen] = useState(false);
+  const [addIsPayer, setAddIsPayer] = useState<"yes" | "no" | null>(null);
+  const [addPayerMode, setAddPayerMode] = useState<"existing" | "new" | null>(null);
+  const [partners, setPartners] = useState<PartnerState[]>(() => {
+    if (initialData?.partners?.length) {
+      const payerIdx = initialData.partners.findIndex((p) => (p as { isPayer?: boolean }).isPayer === true);
+      const mapped = initialData.partners.map((p, idx) => {
+        const q = p as PartnerState & { customerId?: string | null; customer?: { id: string; fullName: string; email: string | null; phone: string | null } };
+        const base = {
+          ...p,
+          payerMode: q.customerId || q.customer ? "existing" : null,
+          customerId: q.customerId ?? null,
+          customerInline: null,
+          customer: q.customer,
+        } as PartnerState;
+        if (idx === 0) {
+          const wasPayerElsewhere = payerIdx >= 1;
+          const payerSource = wasPayerElsewhere ? (initialData!.partners![payerIdx] as PartnerState & { customerId?: string | null; customer?: { id: string; fullName: string; email: string | null; phone: string | null } }) : null;
+          return {
+            ...base,
+            isPayer: true,
+            ...(payerSource && {
+              payerMode: payerSource.customerId || payerSource.customer ? "existing" : null,
+              customerId: payerSource.customerId ?? null,
+              customer: payerSource.customer,
+              customerInline: null,
+            }),
+          } as PartnerState;
+        }
+        return { ...base, isPayer: false, payerMode: null, customerId: null, customerInline: null, customer: undefined } as PartnerState;
+      });
+      return mapped;
+    }
+    return [{ ...EMPTY_PARTNER, isPayer: true }];
+  });
 
   // Lógica para inicializar selectedBusinessType e customBusinessType
   const initialBusinessType = initialData?.businessType ?? "";
@@ -230,6 +341,130 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
   const [customBusinessType, setCustomBusinessType] = useState<string>(
     isBusinessTypeInList ? "" : initialBusinessType
   );
+
+  type CustomerLookupItem = {
+    id: string;
+    fullName: string;
+    email: string | null;
+    phone: string | null;
+    source?: "customer" | "person_group";
+  };
+  const [customerSearch, setCustomerSearch] = useState<{
+    partnerIndex: number;
+    q: string;
+    items: CustomerLookupItem[];
+    loading: boolean;
+  } | null>(null);
+  const [customerResolvingId, setCustomerResolvingId] = useState<string | null>(null);
+  const customerLookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const customerLookupAbortRef = useRef<AbortController | null>(null);
+
+  const fetchCustomerLookup = useCallback(async (q: string, partnerIndex: number) => {
+    const qTrim = q.trim();
+    if (!qTrim || qTrim.length < 2) {
+      setCustomerSearch((prev) => (prev && prev.partnerIndex === partnerIndex ? { ...prev, q: qTrim, items: [], loading: false } : prev));
+      return;
+    }
+    if (customerLookupAbortRef.current) customerLookupAbortRef.current.abort();
+    customerLookupAbortRef.current = new AbortController();
+    const signal = customerLookupAbortRef.current.signal;
+    setCustomerSearch((prev) => (prev && prev.partnerIndex === partnerIndex ? { ...prev, q: qTrim, items: [], loading: true } : { partnerIndex, q: qTrim, items: [], loading: true }));
+    try {
+      const res = await fetch(`/api/customers/lookup?q=${encodeURIComponent(qTrim)}&limit=10`, { signal });
+      const json = await res.json();
+      const raw = (json.items ?? []) as CustomerLookupItem[];
+      const personKey = (i: CustomerLookupItem) =>
+        (i.email?.trim() && i.email.trim().toLowerCase()) ||
+        (i.phone && i.phone.replace(/\D/g, "")) ||
+        i.id;
+      const items = Array.from(new Map(raw.map((i) => [personKey(i), i])).values());
+      if (signal.aborted) return;
+      setCustomerSearch((prev) => (prev && prev.partnerIndex === partnerIndex ? { ...prev, items, loading: false } : prev));
+    } catch (err) {
+      if ((err as { name?: string })?.name === "AbortError") return;
+      setCustomerSearch((prev) => (prev ? { ...prev, items: [], loading: false } : null));
+    }
+  }, []);
+
+  const scheduleCustomerLookup = useCallback((q: string, partnerIndex: number) => {
+    if (customerLookupDebounceRef.current) clearTimeout(customerLookupDebounceRef.current);
+    const qTrim = q.trim();
+    if (qTrim.length < 2) {
+      setCustomerSearch((prev) => (prev && prev.partnerIndex === partnerIndex ? { ...prev, q: qTrim, items: [], loading: false } : prev));
+      return;
+    }
+    setCustomerSearch((prev) => (prev && prev.partnerIndex === partnerIndex ? { ...prev, q: qTrim } : { partnerIndex, q: qTrim, items: [], loading: false }));
+    customerLookupDebounceRef.current = setTimeout(() => fetchCustomerLookup(qTrim, partnerIndex), 300);
+  }, [fetchCustomerLookup]);
+
+  const updatePartner = useCallback((i: number, field: keyof PartnerState, value: unknown) => {
+    setPartners((prev) => {
+      const next = [...prev];
+      (next[i] as Record<string, unknown>)[field] = value;
+      return next;
+    });
+  }, []);
+
+  const fetchAndSetCustomerFull = useCallback((partnerIndex: number, customerId: string) => {
+    fetch(`/api/customers/${encodeURIComponent(customerId)}`)
+      .then((res) => (res.ok ? res.json() : null))
+      .then((full: CustomerFullDisplay | null) => {
+        if (!full) return;
+        setPartners((prev) =>
+          prev.map((p2, idx) =>
+            idx === partnerIndex ? { ...p2, customerFull: full } : p2
+          )
+        );
+      })
+      .catch(() => {});
+  }, []);
+
+  const selectLookupItem = useCallback(
+    async (i: number, item: CustomerLookupItem) => {
+      if (item.source === "person_group") {
+        setCustomerResolvingId(item.id);
+        try {
+          const res = await fetch(`/api/customers/by-person/${encodeURIComponent(item.id)}`);
+          if (!res.ok) return;
+          const customer = (await res.json()) as { id: string; fullName: string; email: string | null; phone: string | null };
+          setPartners((prev) =>
+            prev.map((p2, idx) =>
+              idx === i
+                ? {
+                    ...p2,
+                    customerId: customer.id,
+                    customer: { id: customer.id, fullName: customer.fullName, email: customer.email, phone: customer.phone },
+                    payerMode: "existing" as const,
+                    customerFull: null,
+                  }
+                : p2
+            )
+          );
+          setCustomerSearch(null);
+          fetchAndSetCustomerFull(i, customer.id);
+        } finally {
+          setCustomerResolvingId(null);
+        }
+      } else {
+        updatePartner(i, "customerId", item.id);
+        updatePartner(i, "customer", { id: item.id, fullName: item.fullName, email: item.email, phone: item.phone });
+        updatePartner(i, "payerMode", "existing");
+        updatePartner(i, "customerFull", null);
+        setCustomerSearch(null);
+        fetchAndSetCustomerFull(i, item.id);
+      }
+    },
+    [updatePartner, fetchAndSetCustomerFull]
+  );
+
+  useEffect(() => {
+    partners.forEach((p, idx) => {
+      const ps = p as PartnerState;
+      if (ps.customerId && !ps.customerFull) {
+        fetchAndSetCustomerFull(idx, ps.customerId);
+      }
+    });
+  }, [partners, fetchAndSetCustomerFull]);
 
   const defaultValues: Partial<ClientFormData> = {
     companyName: initialData?.companyName ?? "",
@@ -276,18 +511,57 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
     setValue(`lineItems.${index}.expirationDate`, exp ?? null);
   };
 
-  function addPartner() {
-    setPartners((prev) => [...prev, { ...EMPTY_PARTNER }]);
+  const hasExistingPayer = partners.some((p) => p.isPayer === true);
+
+  function openAddPartnerWizard() {
+    setAddWizardOpen(true);
+    setAddIsPayer(null);
+    setAddPayerMode(null);
+  }
+  function closeAddPartnerWizard() {
+    setAddWizardOpen(false);
+    setAddIsPayer(null);
+    setAddPayerMode(null);
+  }
+  function confirmAddPartner() {
+    if (addIsPayer === null) return;
+    if (addIsPayer === "yes" && addPayerMode === null) return;
+    let newPartner: PartnerState;
+    if (addIsPayer === "no") {
+      newPartner = { ...EMPTY_PARTNER, isPayer: false, payerMode: null, customerId: null, customerInline: null };
+      setPartners((prev) => [...prev, newPartner]);
+    } else {
+      if (addPayerMode === "existing") {
+        newPartner = { ...EMPTY_PARTNER, isPayer: true, payerMode: "existing", customerId: null, customerInline: null };
+      } else {
+        newPartner = { ...EMPTY_PARTNER, isPayer: true, payerMode: "new", customerId: null, customerInline: DEFAULT_CUSTOMER_INLINE };
+      }
+      setPartners((prev) => {
+        const others = prev.map((p) => ({ ...p, isPayer: false, payerMode: null, customerId: null, customerInline: null, customer: undefined, customerFull: null }));
+        return [...others, newPartner];
+      });
+    }
+    closeAddPartnerWizard();
   }
   function removePartner(i: number) {
-    setPartners((prev) => (prev.length > 1 ? prev.filter((_, idx) => idx !== i) : prev));
-  }
-  function updatePartner(i: number, field: keyof typeof EMPTY_PARTNER, value: unknown) {
     setPartners((prev) => {
-      const next = [...prev];
-      (next[i] as Record<string, unknown>)[field] = value;
+      if (prev.length <= 1) return prev;
+      const next = prev.filter((_, idx) => idx !== i);
+      const removedWasPayer = prev[i].isPayer;
+      if (removedWasPayer && next.length > 0) {
+        return next.map((p, idx) => (idx === 0 ? { ...p, isPayer: true } : { ...p, isPayer: false, payerMode: null, customerId: null, customerInline: null, customerFull: null, customer: undefined }));
+      }
       return next;
     });
+  }
+  function setPayer(index: number) {
+    setPartners((prev) =>
+      prev.map((p, i) =>
+        i === index
+          ? { ...p, isPayer: true }
+          : { ...p, isPayer: false, payerMode: null, customerId: null, customerFull: null, customerInline: null, customer: undefined }
+      )
+    );
   }
 
   async function handleSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -314,13 +588,16 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         const state = (fd.get(`partner_state_${i}`) ?? "").toString().trim() || undefined;
         const postalCode = (fd.get(`partner_postalCode_${i}`) ?? "").toString().trim() || undefined;
         const country = (fd.get(`partner_country_${i}`) ?? "").toString().trim() || undefined;
-        if (!name) return null;
-        return {
-          fullName: name,
+        const ps = p as PartnerState;
+        const fullNameForPayload = ps.customer?.fullName ?? ps.customerInline?.fullName ?? name;
+        if (!fullNameForPayload && !ps.customerId && !ps.customerInline) return null;
+        const base = {
+          fullName: fullNameForPayload || name || "—",
           role: p.role,
           percentage: pct,
           phone,
           email,
+          isPayer: p.isPayer ?? false,
           addressLine1,
           addressLine2,
           city,
@@ -328,6 +605,9 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
           postalCode,
           country,
         };
+        if (ps.isPayer && ps.customerId) return { ...base, customerId: ps.customerId };
+        if (ps.isPayer && ps.customerInline) return { ...base, customerInline: ps.customerInline };
+        return base;
       })
       .filter(Boolean) as ClientFormData["partners"];
 
@@ -394,6 +674,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
 
     const payload = {
       ...parsed.data,
+      ...(sourceClientId && !clientId ? { sourceClientId } : {}),
       lineItems: (parsed.data.lineItems ?? []).map((li) => ({
         id: li.dbId ?? undefined,
         kind: li.kind,
@@ -418,6 +699,7 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
     };
     if (process.env.NODE_ENV === "development") {
       console.log("[ClientForm] submit payload.lineItems count:", payload.lineItems.length, payload.lineItems);
+      console.log("[ClientForm] submit payload.partners count:", payload.partners?.length ?? 0, payload.partners);
     }
 
     const url = clientId ? `/api/clients/${clientId}` : "/api/clients";
@@ -456,7 +738,8 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       return;
     }
 
-    const responseClient = (json as { client?: { lineItems?: Array<{ id?: string; kind?: string; description?: string; valueCents?: number; saleDate?: string | null; commercial?: string | null; sdr?: string | null; billingPeriod?: string | null; expirationDate?: string | null }>; partners?: ClientFormData["partners"]; [k: string]: unknown } }).client;
+    const responseClient = (json as { client?: { lineItems?: Array<{ id?: string; kind?: string; description?: string; valueCents?: number; saleDate?: string | null; commercial?: string | null; sdr?: string | null; billingPeriod?: string | null; expirationDate?: string | null }>; partners?: ClientFormData["partners"]; [k: string]: unknown }; customerReused?: boolean }).client;
+    const customerReused = (json as { customerReused?: boolean }).customerReused === true;
     if (responseClient && Array.isArray(responseClient.lineItems)) {
       formReset({
         ...responseClient,
@@ -464,8 +747,11 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
         partners: responseClient.partners ?? partners,
       });
     }
-
-    router.push("/clients");
+    if (customerReused) {
+      setToast({ type: "success", message: "Já existia um cliente com este email. Vinculamos automaticamente." });
+      setTimeout(() => setToast(null), 4000);
+    }
+    router.push(successRedirectPath);
     // Não chamar router.refresh() aqui: push já navega; refresh pode causar edge bugs de RSC.
     // Para atualizar a lista, o PATCH invalida cache (revalidatePath) no server.
   }
@@ -486,6 +772,11 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
           {error}
+        </div>
+      )}
+      {toast && (
+        <div className="rounded-lg bg-green-50 px-4 py-3 text-sm text-green-800 ring-1 ring-green-100">
+          {toast.message}
         </div>
       )}
 
@@ -1068,9 +1359,22 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
 
       {/* SÓCIOS */}
       <section className="space-y-4">
-        <h2 className="border-b border-gray-200 pb-2 text-base font-semibold uppercase tracking-wide text-gray-600">
-          Sócios
-        </h2>
+        <div className="flex flex-wrap items-baseline justify-between gap-2 border-b border-gray-200 pb-2">
+          <h2 className="text-base font-semibold uppercase tracking-wide text-gray-600">
+            Sócios
+          </h2>
+          {partners.length > 0 && (() => {
+            const payer = partners.find((x) => x.isPayer) as PartnerState | undefined;
+            const payerName = payer?.customer?.fullName ?? (payer && "fullName" in payer ? String(payer.fullName ?? "").trim() : "");
+            const payerContact = payer?.customer?.email ?? (payer && "email" in payer ? String(payer.email ?? "").trim() : "");
+            const display = payerName ? (payerContact ? `${payerName} (${payerContact})` : payerName) : null;
+            return (
+              <p className="text-xs font-medium text-gray-500">
+                Pagador: {display ?? "—"}
+              </p>
+            );
+          })()}
+        </div>
         {fieldErrors.partners && (
           <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">{fieldErrors.partners}</p>
         )}
@@ -1078,15 +1382,17 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
           {partners.map((p, i) => (
             <div key={i} className="space-y-4 rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
               <div className="flex flex-wrap items-end gap-3">
-                <div className="min-w-[180px] flex-1">
-                  <label className="block text-xs font-medium text-gray-500">Nome *</label>
-                  <input
-                    name={`partner_name_${i}`}
-                    type="text"
-                    defaultValue={"fullName" in p ? String(p.fullName) : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </div>
+                {!(p as PartnerState).isPayer && (
+                  <div className="min-w-[180px] flex-1">
+                    <label className="block text-xs font-medium text-gray-500">Nome *</label>
+                    <input
+                      name={`partner_name_${i}`}
+                      type="text"
+                      defaultValue={"fullName" in p ? String(p.fullName) : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                )}
                 <div className="min-w-[120px]">
                   <label className="block text-xs font-medium text-gray-500">Papel</label>
                   <select
@@ -1111,26 +1417,46 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                     className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                   />
                 </div>
-                <div className="flex min-w-[200px] flex-1 flex-col gap-2 sm:flex-row sm:items-end sm:gap-2">
-                  <div className="min-w-[140px] flex-1">
-                    <label className="block text-xs font-medium text-gray-500">País / DDI</label>
-                    <SearchableCountrySelect
-                      name={`partner_phone_country_${i}`}
-                      defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").countryCode}
-                      className="mt-1"
-                    />
-                  </div>
-                  <div className="min-w-[100px] flex-1">
-                    <label className="block text-xs font-medium text-gray-500">Telefone</label>
-                    <input
-                      name={`partner_phone_${i}`}
-                      type="tel"
-                      defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").localNumber}
-                      placeholder="11 99999-9999"
+                <div className="min-w-[200px]">
+                  <label className="block text-xs font-medium text-gray-500">Este sócio é Cliente (Pagador)?</label>
+                  {i === 0 ? (
+                    <p className="mt-1 text-sm text-gray-700">Sim (primeiro sócio é sempre o pagador)</p>
+                  ) : (
+                    <select
+                      value={p.isPayer ? "Sim" : "Não"}
+                      onChange={(e) => {
+                        if (e.target.value === "Sim") setPayer(i);
+                        else setPartners((prev) => prev.map((p2, idx) => (idx === i ? { ...p2, isPayer: false, payerMode: null, customerId: null, customerInline: null, customer: undefined } : p2)));
+                      }}
                       className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                    />
-                  </div>
+                    >
+                      <option value="Não">Não</option>
+                      <option value="Sim">Sim</option>
+                    </select>
+                  )}
                 </div>
+                {!(p as PartnerState).isPayer && (
+                  <div className="flex min-w-[200px] flex-1 flex-col gap-2 sm:flex-row sm:items-end sm:gap-2">
+                    <div className="min-w-[140px] flex-1">
+                      <label className="block text-xs font-medium text-gray-500">País / DDI</label>
+                      <SearchableCountrySelect
+                        name={`partner_phone_country_${i}`}
+                        defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").countryCode}
+                        className="mt-1"
+                      />
+                    </div>
+                    <div className="min-w-[100px] flex-1">
+                      <label className="block text-xs font-medium text-gray-500">Telefone</label>
+                      <input
+                        name={`partner_phone_${i}`}
+                        type="tel"
+                        defaultValue={parsePhoneForDisplay("phone" in p ? String(p.phone ?? "") : "").localNumber}
+                        placeholder="11 99999-9999"
+                        className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                      />
+                    </div>
+                  </div>
+                )}
                 <div className="flex items-end">
                   <button
                     type="button"
@@ -1141,99 +1467,476 @@ export function ClientForm({ initialData, clientId }: ClientFormProps) {
                   </button>
                 </div>
               </div>
-              {/* Endereço pessoal do sócio */}
-              <div className="grid gap-3 border-t border-gray-200 pt-4 sm:grid-cols-2">
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-500">E-mail {!clientId && "*"}</label>
-                  <input
-                    name={`partner_email_${i}`}
-                    type="email"
-                    defaultValue={"email" in p ? String(p.email ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                  {fieldErrors[`partners.${i}.email`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.email`]}</p>
+              {/* Endereço pessoal do sócio — oculto quando este sócio é Cliente (Pagador); dados vêm do customer */}
+              {!(p as PartnerState).isPayer && (
+                <div className="grid gap-3 border-t border-gray-200 pt-4 sm:grid-cols-2">
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500">E-mail {!clientId && "*"}</label>
+                    <input
+                      name={`partner_email_${i}`}
+                      type="email"
+                      defaultValue={"email" in p ? String(p.email ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {fieldErrors[`partners.${i}.email`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.email`]}</p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500">Endereço (Linha 1) {!clientId && "*"}</label>
+                    <input
+                      name={`partner_addressLine1_${i}`}
+                      type="text"
+                      defaultValue={"addressLine1" in p ? String(p.addressLine1 ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {fieldErrors[`partners.${i}.addressLine1`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.addressLine1`]}</p>
+                    )}
+                  </div>
+                  <div className="sm:col-span-2">
+                    <label className="block text-xs font-medium text-gray-500">Endereço (Linha 2) <span className="text-gray-400">(Opcional)</span></label>
+                    <input
+                      name={`partner_addressLine2_${i}`}
+                      type="text"
+                      defaultValue={"addressLine2" in p ? String(p.addressLine2 ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Cidade {!clientId && "*"}</label>
+                    <input
+                      name={`partner_city_${i}`}
+                      type="text"
+                      defaultValue={"city" in p ? String(p.city ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {fieldErrors[`partners.${i}.city`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.city`]}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Estado/Província {!clientId && "*"}</label>
+                    <input
+                      name={`partner_state_${i}`}
+                      type="text"
+                      defaultValue={"state" in p ? String(p.state ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {fieldErrors[`partners.${i}.state`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.state`]}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">Código Postal {!clientId && "*"}</label>
+                    <input
+                      name={`partner_postalCode_${i}`}
+                      type="text"
+                      defaultValue={"postalCode" in p ? String(p.postalCode ?? "") : ""}
+                      className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                    />
+                    {fieldErrors[`partners.${i}.postalCode`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.postalCode`]}</p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-500">País {!clientId && "*"}</label>
+                    <CountrySelectForAddress
+                      name={`partner_country_${i}`}
+                      defaultValue={"country" in p ? String(p.country ?? "") : ""}
+                      required={!clientId}
+                      className="mt-1"
+                    />
+                    {fieldErrors[`partners.${i}.country`] && (
+                      <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.country`]}</p>
+                    )}
+                  </div>
+                </div>
+              )}
+
+              {/* Bloco Cliente (Pagador): Sócio já é cliente? Sim (buscar) ou Não (cadastrar novo) — sem modal */}
+              {(p as PartnerState).isPayer && (
+                <div className="border-t border-gray-200 pt-4 space-y-3">
+                  <p className="text-xs font-semibold text-gray-600">Sócio já é cliente?</p>
+                  {(p as PartnerState).customerId || (p as PartnerState).customer ? (
+                    <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                      {(p as PartnerState).customerFull ? (
+                        <>
+                          <p className="text-xs font-medium text-gray-500">Dados do cliente selecionado</p>
+                          <div className="grid gap-3 sm:grid-cols-2">
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-500">Nome completo *</label>
+                              <input value={(p as PartnerState).customerFull!.fullName} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Given name *</label>
+                              <input value={(p as PartnerState).customerFull!.givenName} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Sobrenome *</label>
+                              <input value={(p as PartnerState).customerFull!.surName} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-500">Cidadania *</label>
+                              <input value={(p as PartnerState).customerFull!.citizenshipCountry} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Telefone</label>
+                              <input value={(p as PartnerState).customerFull!.phone ?? ""} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">E-mail *</label>
+                              <input type="email" value={(p as PartnerState).customerFull!.email} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-500">Endereço (linha 1) *</label>
+                              <input value={(p as PartnerState).customerFull!.address.line1} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div className="sm:col-span-2">
+                              <label className="block text-xs font-medium text-gray-500">Endereço (linha 2)</label>
+                              <input value={(p as PartnerState).customerFull!.address.line2 ?? ""} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Cidade *</label>
+                              <input value={(p as PartnerState).customerFull!.address.city} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Estado/Província *</label>
+                              <input value={(p as PartnerState).customerFull!.address.stateProvince} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">Código postal *</label>
+                              <input value={(p as PartnerState).customerFull!.address.postalCode} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                            <div>
+                              <label className="block text-xs font-medium text-gray-500">País *</label>
+                              <input value={(p as PartnerState).customerFull!.address.country} readOnly className="mt-1 block w-full rounded border border-gray-200 bg-gray-50 px-2 py-1.5 text-sm text-gray-700" />
+                            </div>
+                          </div>
+                        </>
+                      ) : (
+                        <p className="text-sm text-gray-500">Carregando dados do cliente…</p>
+                      )}
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPartners((prev) =>
+                            prev.map((p2, idx) =>
+                              idx === i
+                                ? { ...p2, customerId: null, customer: undefined, customerFull: null, customerInline: null, payerMode: null }
+                                : p2
+                            )
+                          )
+                        }
+                        className="text-xs font-medium text-blue-600 hover:text-blue-800"
+                      >
+                        Trocar cliente
+                      </button>
+                    </div>
+                  ) : (p as PartnerState).payerMode === "new" ? (
+                    <div className="rounded-md border border-gray-200 bg-white p-4 space-y-3">
+                      <p className="text-xs font-medium text-gray-500">Cadastrar novo cliente (dados do pagador)</p>
+                      <div className="grid gap-3 sm:grid-cols-2">
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-500">Nome completo *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.fullName ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), fullName: e.target.value })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Given name *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.givenName ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), givenName: e.target.value })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Sobrenome *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.surName ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), surName: e.target.value })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-500">Cidadania *</label>
+                          <CountrySelectForAddress
+                            name={`payer_citizenship_${i}`}
+                            value={((p as PartnerState).customerInline?.citizenshipCountry ?? "").trim()}
+                            onChange={(v) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), citizenshipCountry: v })}
+                            required
+                            className="mt-1"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Telefone</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.phone ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), phone: e.target.value || null })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">E-mail *</label>
+                          <input
+                            type="email"
+                            value={((p as PartnerState).customerInline?.email ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), email: e.target.value })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-500">Endereço (linha 1) *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.address?.line1 ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), line1: e.target.value } })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div className="sm:col-span-2">
+                          <label className="block text-xs font-medium text-gray-500">Endereço (linha 2)</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.address?.line2 ?? "").trim() || ""}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), line2: e.target.value || null } })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Cidade *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.address?.city ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), city: e.target.value } })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Estado/Província *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.address?.stateProvince ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), stateProvince: e.target.value } })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">Código postal *</label>
+                          <input
+                            value={((p as PartnerState).customerInline?.address?.postalCode ?? "").trim()}
+                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), postalCode: e.target.value } })}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500">País *</label>
+                          <CountrySelectForAddress
+                            name={`payer_country_${i}`}
+                            value={((p as PartnerState).customerInline?.address?.country ?? "").trim()}
+                            onChange={(v) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), address: { ...((p as PartnerState).customerInline?.address ?? DEFAULT_CUSTOMER_INLINE.address), country: v } })}
+                            required
+                            className="mt-1"
+                          />
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        onClick={() =>
+                          setPartners((prev) =>
+                            prev.map((p2, idx) =>
+                              idx === i
+                                ? { ...p2, payerMode: "existing" as const, customerInline: null }
+                                : p2
+                            )
+                          )
+                        }
+                        className="text-xs font-medium text-gray-500 hover:text-gray-700"
+                      >
+                        Voltar (buscar cliente)
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="space-y-2">
+                      <div className="flex gap-4">
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`payer_mode_${i}`}
+                            checked={(p as PartnerState).payerMode !== "new"}
+                            onChange={() =>
+                              setPartners((prev) =>
+                                prev.map((p2, idx) =>
+                                  idx === i
+                                    ? { ...p2, payerMode: "existing" as const, customerInline: null }
+                                    : p2
+                                )
+                              )
+                            }
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Sim (Buscar cliente)</span>
+                        </label>
+                        <label className="flex cursor-pointer items-center gap-2">
+                          <input
+                            type="radio"
+                            name={`payer_mode_${i}`}
+                            checked={(p as PartnerState).payerMode === "new"}
+                            onChange={() => {
+                              updatePartner(i, "payerMode", "new");
+                              setPartners((prev) =>
+                                prev.map((p2, idx) =>
+                                  idx === i
+                                    ? {
+                                        ...p2,
+                                        customerId: null,
+                                        customer: undefined,
+                                        customerInline: DEFAULT_CUSTOMER_INLINE,
+                                      }
+                                    : p2
+                                )
+                              );
+                            }}
+                            className="h-4 w-4"
+                          />
+                          <span className="text-sm">Não (Cadastrar novo cliente)</span>
+                        </label>
+                      </div>
+                      {(p as PartnerState).payerMode !== "new" && (
+                        <div className="relative">
+                          <input
+                            type="text"
+                            placeholder="Nome, e-mail ou telefone (mín. 2 caracteres)"
+                            value={customerSearch?.partnerIndex === i ? customerSearch.q : ""}
+                            onChange={(e) => {
+                              const v = e.target.value;
+                              scheduleCustomerLookup(v, i);
+                            }}
+                            onFocus={() => (customerSearch?.partnerIndex !== i && setCustomerSearch({ partnerIndex: i, q: "", items: [], loading: false }))}
+                            className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                          />
+                          {customerSearch?.partnerIndex === i && customerSearch.items.length > 0 && (
+                            <ul className="absolute z-10 mt-1 max-h-48 w-full overflow-auto rounded-md border border-gray-200 bg-white py-1 shadow-lg">
+                              {customerSearch.items.map((item) => (
+                                <li key={item.id}>
+                                  <button
+                                    type="button"
+                                    onClick={() => selectLookupItem(i, item)}
+                                    disabled={customerResolvingId === item.id}
+                                    className="block w-full px-3 py-2 text-left text-sm hover:bg-gray-100 disabled:opacity-50"
+                                  >
+                                    {item.fullName}
+                                  </button>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {customerSearch?.partnerIndex === i && customerSearch.loading && (
+                            <p className="mt-1 text-xs text-gray-500">Buscando…</p>
+                          )}
+                        </div>
+                      )}
+                    </div>
                   )}
                 </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-500">Endereço (Linha 1) {!clientId && "*"}</label>
-                  <input
-                    name={`partner_addressLine1_${i}`}
-                    type="text"
-                    defaultValue={"addressLine1" in p ? String(p.addressLine1 ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                  {fieldErrors[`partners.${i}.addressLine1`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.addressLine1`]}</p>
-                  )}
-                </div>
-                <div className="sm:col-span-2">
-                  <label className="block text-xs font-medium text-gray-500">Endereço (Linha 2) <span className="text-gray-400">(Opcional)</span></label>
-                  <input
-                    name={`partner_addressLine2_${i}`}
-                    type="text"
-                    defaultValue={"addressLine2" in p ? String(p.addressLine2 ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                </div>
+              )}
+            </div>
+          ))}
+          {!addWizardOpen ? (
+            <button
+              type="button"
+              onClick={openAddPartnerWizard}
+              className="w-full rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm font-medium text-gray-500 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-600 transition-colors"
+            >
+              + Adicionar sócio
+            </button>
+          ) : (
+            <div className="rounded-lg border-2 border-gray-200 bg-white p-4 shadow-sm">
+              <p className="mb-3 text-xs font-medium uppercase tracking-wide text-gray-500">
+                Novo sócio
+              </p>
+              <div className="space-y-4">
                 <div>
-                  <label className="block text-xs font-medium text-gray-500">Cidade {!clientId && "*"}</label>
-                  <input
-                    name={`partner_city_${i}`}
-                    type="text"
-                    defaultValue={"city" in p ? String(p.city ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                  {fieldErrors[`partners.${i}.city`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.city`]}</p>
+                  <label className="block text-sm font-medium text-gray-700">
+                    Este sócio é Cliente (Pagador)?
+                  </label>
+                  <div className="mt-2 flex flex-wrap gap-3">
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="add_is_payer"
+                        checked={addIsPayer === "yes"}
+                        onChange={() => { setAddIsPayer("yes"); setAddPayerMode(null); }}
+                        disabled={hasExistingPayer}
+                        className="h-4 w-4 disabled:opacity-50"
+                      />
+                      <span className="text-sm">Sim</span>
+                    </label>
+                    <label className="flex cursor-pointer items-center gap-2">
+                      <input
+                        type="radio"
+                        name="add_is_payer"
+                        checked={addIsPayer === "no"}
+                        onChange={() => { setAddIsPayer("no"); setAddPayerMode(null); }}
+                        className="h-4 w-4"
+                      />
+                      <span className="text-sm">Não</span>
+                    </label>
+                  </div>
+                  {hasExistingPayer && (
+                    <p className="mt-1 text-xs text-amber-600">
+                      Já existe um pagador. Altere no sócio atual.
+                    </p>
                   )}
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500">Estado/Província {!clientId && "*"}</label>
-                  <input
-                    name={`partner_state_${i}`}
-                    type="text"
-                    defaultValue={"state" in p ? String(p.state ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                  {fieldErrors[`partners.${i}.state`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.state`]}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500">Código Postal {!clientId && "*"}</label>
-                  <input
-                    name={`partner_postalCode_${i}`}
-                    type="text"
-                    defaultValue={"postalCode" in p ? String(p.postalCode ?? "") : ""}
-                    className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
-                  />
-                  {fieldErrors[`partners.${i}.postalCode`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.postalCode`]}</p>
-                  )}
-                </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-500">País {!clientId && "*"}</label>
-                  <CountrySelectForAddress
-                    name={`partner_country_${i}`}
-                    defaultValue={"country" in p ? String(p.country ?? "") : ""}
-                    required={!clientId}
-                    className="mt-1"
-                  />
-                  {fieldErrors[`partners.${i}.country`] && (
-                    <p className="mt-1 text-xs text-red-600">{fieldErrors[`partners.${i}.country`]}</p>
-                  )}
+                {addIsPayer === "yes" && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700">
+                      Sócio já é cliente?
+                    </label>
+                    <div className="mt-2 flex flex-wrap gap-3">
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="radio"
+                          name="add_payer_mode"
+                          checked={addPayerMode === "existing"}
+                          onChange={() => setAddPayerMode("existing")}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Sim (Buscar cliente)</span>
+                      </label>
+                      <label className="flex cursor-pointer items-center gap-2">
+                        <input
+                          type="radio"
+                          name="add_payer_mode"
+                          checked={addPayerMode === "new"}
+                          onChange={() => setAddPayerMode("new")}
+                          className="h-4 w-4"
+                        />
+                        <span className="text-sm">Não (Cadastrar novo cliente)</span>
+                      </label>
+                    </div>
+                  </div>
+                )}
+                <div className="flex flex-wrap gap-2 border-t border-gray-200 pt-3">
+                  <button
+                    type="button"
+                    onClick={closeAddPartnerWizard}
+                    className="rounded-md border border-gray-300 bg-white px-3 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    type="button"
+                    onClick={confirmAddPartner}
+                    disabled={addIsPayer === null || (addIsPayer === "yes" && addPayerMode === null)}
+                    className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white hover:bg-blue-700 disabled:opacity-50 disabled:hover:bg-blue-600"
+                  >
+                    Continuar
+                  </button>
                 </div>
               </div>
             </div>
-          ))}
-          <button
-            type="button"
-            onClick={addPartner}
-            className="w-full rounded-lg border-2 border-dashed border-gray-300 py-3 text-sm font-medium text-gray-500 hover:border-blue-400 hover:bg-blue-50/50 hover:text-blue-600 transition-colors"
-          >
-            + Adicionar sócio
-          </button>
+          )}
         </div>
       </section>
 

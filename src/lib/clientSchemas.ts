@@ -6,6 +6,7 @@ import {
   LINE_ITEM_KINDS,
   PARTNER_ROLES,
 } from "@/db/schema";
+import { createCustomerSchema } from "@/lib/customers/validators";
 import { LLC_CATEGORIES } from "@/constants/llcCategories";
 import { US_STATES } from "@/constants/usStates";
 const commercialSdrSchema = z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]);
@@ -211,8 +212,12 @@ export const partnerSchema = z.object({
     .min(0, "Percentual deve ser >= 0")
     .max(100, "Percentual deve ser <= 100"),
   phone: z.string().max(50).optional(),
+  isPayer: z.boolean().optional().default(false),
   ...partnerAddressFields,
 });
+
+/** Payload de cliente pagador para cadastro inline (dentro do partner). */
+export const customerInlineSchema = createCustomerSchema;
 
 const partnerSchemaForUpdate = z.object({
   fullName: z.string().min(1, "Nome do sócio é obrigatório"),
@@ -222,12 +227,36 @@ const partnerSchemaForUpdate = z.object({
     .min(0, "Percentual deve ser >= 0")
     .max(100, "Percentual deve ser <= 100"),
   phone: z.string().max(50).optional(),
+  isPayer: z.boolean().optional().default(false),
+  /** Quando isPayer: id do customer já cadastrado (modo "buscar existente"). */
+  customerId: z.string().uuid().optional().nullable(),
+  /** Quando isPayer: dados do customer para criar inline (modo "cadastrar novo"). */
+  customerInline: customerInlineSchema.optional().nullable(),
   ...partnerAddressFieldsOptional,
 });
 
 const partnersSumRefine = (partners: { percentage: number }[]) => {
   const sum = partners.reduce((acc, p) => acc + p.percentage, 0);
   return sum <= 100;
+};
+
+const exactlyOnePayerRefine = (partners: { isPayer?: boolean }[]) => {
+  const payers = partners.filter((p) => p.isPayer === true);
+  return payers.length === 1;
+};
+
+/** Payer deve ter customerId ou customerInline preenchido. */
+const payerHasCustomerRefine = (
+  partners: { isPayer?: boolean; customerId?: string | null; customerInline?: unknown }[]
+) => {
+  const payer = partners.find((p) => p.isPayer === true);
+  if (!payer) return true;
+  const hasId = !!payer.customerId && String(payer.customerId).trim().length > 0;
+  const hasInline =
+    payer.customerInline != null &&
+    typeof payer.customerInline === "object" &&
+    Object.keys(payer.customerInline as object).length > 0;
+  return hasId || hasInline;
 };
 
 const personalAddressFieldsOptional = {
@@ -246,6 +275,10 @@ export const createClientSchema = z
   .object({
     companyName: z.string().min(1, "Empresa é obrigatória").max(255),
     customerCode: z.string().max(100).optional(), // gerado automaticamente se omitido
+    /** Quando preenchido (modal "já possui empresa"), novo cliente herda o personGroupId do cliente fonte. */
+    sourceClientId: z.string().uuid().optional(),
+    /** Quando preenchido (ex.: cadastro de pessoa + empresa), novo cliente usa este personGroupId (sem dedup). */
+    personGroupId: z.string().uuid().optional(),
     paymentDate: z.string().optional(), // ISO date "YYYY-MM-DD"
     commercial: commercialSdrSchema.optional(),
     sdr: commercialSdrSchema.optional(),
@@ -264,6 +297,18 @@ export const createClientSchema = z
   .refine(
     (data) => partnersSumRefine(data.partners ?? []),
     { message: "A soma das participações dos sócios não pode exceder 100%", path: ["partners"] }
+  )
+  .refine(
+    (data) => (data.partners ?? []).length === 0 || exactlyOnePayerRefine(data.partners ?? []),
+    { message: "Selecione exatamente 1 sócio como Cliente (Pagador).", path: ["partners"] }
+  )
+  .refine(
+    (data) => (data.partners ?? []).length === 0 || payerHasCustomerRefine(data.partners ?? []),
+    {
+      message:
+        "O sócio marcado como Cliente (Pagador) deve ter um cliente vinculado (buscar existente ou cadastrar novo).",
+      path: ["partners"],
+    }
   );
 
 export const updateClientSchema = z
@@ -288,6 +333,18 @@ export const updateClientSchema = z
   .refine(
     (data) => !data.partners || partnersSumRefine(data.partners),
     { message: "A soma das participações dos sócios não pode exceder 100%", path: ["partners"] }
+  )
+  .refine(
+    (data) => !data.partners || data.partners.length === 0 || exactlyOnePayerRefine(data.partners),
+    { message: "Selecione exatamente 1 sócio como Cliente (Pagador).", path: ["partners"] }
+  )
+  .refine(
+    (data) => !data.partners || data.partners.length === 0 || payerHasCustomerRefine(data.partners),
+    {
+      message:
+        "O sócio marcado como Cliente (Pagador) deve ter um cliente vinculado (buscar existente ou cadastrar novo).",
+      path: ["partners"],
+    }
   );
 
 export type CreateClientInput = z.infer<typeof createClientSchema>;

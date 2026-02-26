@@ -42,13 +42,13 @@ export async function POST(request: NextRequest) {
   const formData = await request.formData();
   const passcode = (formData.get("passcode") || "").toString();
   const callbackUrl =
-    (formData.get("callbackUrl") || "/clients").toString() || "/clients";
+    (formData.get("callbackUrl") || "/empresas").toString() || "/empresas";
 
   if (!validatePasscode(passcode)) {
     rateLimitConsume(ip);
     const loginUrl = new URL("/login", getRequestOrigin(request));
     loginUrl.searchParams.set("error", "invalid");
-    if (callbackUrl && callbackUrl !== "/clients") {
+    if (callbackUrl && callbackUrl !== "/empresas") {
       loginUrl.searchParams.set("callbackUrl", callbackUrl);
     }
     return NextResponse.redirect(loginUrl);

@@ -15,7 +15,7 @@ export default function LoginPage({ searchParams }: LoginPageProps) {
         ? "Passcode inválido. Tente novamente."
         : null;
 
-  const callbackUrl = searchParams?.callbackUrl ?? "/clients";
+  const callbackUrl = searchParams?.callbackUrl ?? "/empresas";
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">

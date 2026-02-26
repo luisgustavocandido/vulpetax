@@ -6,12 +6,14 @@ import { useRouter } from "next/navigation";
 type ClientDeleteButtonProps = {
   clientId: string;
   clientName: string;
+  /** URL para redirecionar após excluir. Default: /clients */
+  redirectPath?: string;
 };
 
 /**
  * Client: confirmação antes de DELETE; redirect após sucesso.
  */
-export function ClientDeleteButton({ clientId, clientName }: ClientDeleteButtonProps) {
+export function ClientDeleteButton({ clientId, clientName, redirectPath = "/clients" }: ClientDeleteButtonProps) {
   const router = useRouter();
   const [confirming, setConfirming] = useState(false);
   const [deleting, setDeleting] = useState(false);
@@ -22,7 +24,7 @@ export function ClientDeleteButton({ clientId, clientName }: ClientDeleteButtonP
     setDeleting(false);
     setConfirming(false);
     if (res.ok) {
-      router.push("/clients");
+      router.push(redirectPath);
       router.refresh();
     } else {
       const json = await res.json().catch(() => ({}));
