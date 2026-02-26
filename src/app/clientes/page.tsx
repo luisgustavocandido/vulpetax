@@ -6,8 +6,7 @@ import { SociosTable } from "./SociosTable";
 import { Pagination } from "@/components/Pagination";
 import { ClientesTabsFilters } from "./ClientesTabsFilters";
 
-const TAB_VALUES = ["customers", "partners"] as const;
-type TabValue = (typeof TAB_VALUES)[number];
+type TabValue = "customers" | "partners";
 
 type PageProps = {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
@@ -41,7 +40,7 @@ export default async function ClientesPage({ searchParams }: PageProps) {
   const base = getBaseUrlFromHeaders(headersList);
   const cookie = headersList.get("cookie") ?? "";
 
-  let customersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; addressLine1: string | null; city: string | null; country: string | null }>; total: number } = { items: [], total: 0 };
+  let customersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; addressLine1: string | null; city: string | null; country: string | null; companiesCount: number }>; total: number } = { items: [], total: 0 };
   let partnersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; role: string; percentage: number; company: { id: string; name: string; code: string } }>; total: number } = { items: [], total: 0 };
 
   if (tab === "customers") {

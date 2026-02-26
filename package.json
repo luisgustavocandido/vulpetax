@@ -12,6 +12,8 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:ensure-customers": "npx tsx src/scripts/ensureCustomersTable.ts",
+    "db:ensure-monthly-targets": "npx tsx src/scripts/ensureMonthlyTargetsTable.ts",
+    "db:ensure-monthly-targets-by-commercial": "npx tsx src/scripts/ensureMonthlyTargetsByCommercialTable.ts",
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "db:check": "npx tsx src/scripts/checkDatabase.ts",

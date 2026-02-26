@@ -1,4 +1,4 @@
-import { ilike, or, asc, eq, sql } from "drizzle-orm";
+import { ilike, or, eq, desc, sql } from "drizzle-orm";
 import { db } from "@/db";
 import { customers, personGroups } from "@/db/schema";
 import { normalizeEmail } from "./normalize";

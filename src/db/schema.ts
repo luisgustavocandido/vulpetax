@@ -170,6 +170,7 @@ export const clients = pgTable(
       .on(table.taxFormSource)
       .where(sql`${table.deletedAt} IS NULL`),
     index("clients_person_group_id_idx").on(table.personGroupId),
+    index("clients_payment_date_commercial_idx").on(table.paymentDate, table.commercial),
   ]
 );
 
@@ -206,7 +207,12 @@ export const clientLineItems = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true })
       .notNull()
       .defaultNow(),
-  }
+  },
+  (table) => [
+    index("client_line_items_sale_date_idx").on(table.saleDate),
+    index("client_line_items_sale_date_kind_idx").on(table.saleDate, table.kind),
+    index("client_line_items_client_id_kind_idx").on(table.clientId, table.kind),
+  ]
 );
 
 // --- billing_charges (cobranças de itens Endereço Mensal/Anual) ---
@@ -315,6 +321,49 @@ export const clientPartners = pgTable("client_partners", {
     .notNull()
     .defaultNow(),
 });
+
+// --- monthly_targets (metas mensais para dashboard executivo) ---
+export const monthlyTargets = pgTable(
+  "monthly_targets",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    month: varchar("month", { length: 7 }).notNull(),
+    llcTarget: integer("llc_target").notNull().default(0),
+    revenueTargetCents: integer("revenue_target_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [unique("monthly_targets_month_unique").on(table.month)]
+);
+
+export type MonthlyTargetInsert = typeof monthlyTargets.$inferInsert;
+export type MonthlyTarget = typeof monthlyTargets.$inferSelect;
+
+// --- monthly_targets_by_commercial (metas por comercial no dashboard) ---
+export const monthlyTargetsByCommercial = pgTable(
+  "monthly_targets_by_commercial",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    month: varchar("month", { length: 7 }).notNull(),
+    commercial: varchar("commercial", { length: 50 }).notNull(),
+    llcTarget: integer("llc_target").notNull().default(0),
+    revenueTargetCents: integer("revenue_target_cents").notNull().default(0),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+    updatedAt: timestamp("updated_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (table) => [unique("monthly_targets_by_commercial_month_commercial_unique").on(table.month, table.commercial)]
+);
+
+export type MonthlyTargetByCommercialInsert = typeof monthlyTargetsByCommercial.$inferInsert;
+export type MonthlyTargetByCommercial = typeof monthlyTargetsByCommercial.$inferSelect;
 
 // --- audit_log ---
 export const auditLog = pgTable("audit_log", {

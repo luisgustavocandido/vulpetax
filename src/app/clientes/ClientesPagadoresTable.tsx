@@ -77,6 +77,12 @@ export function ClientesPagadoresTable({ items }: ClientesPagadoresTableProps) {
               <td className="whitespace-nowrap px-4 py-2 text-right text-sm">
                 <span className="flex justify-end gap-3">
                   <Link
+                    href={`/clientes/pagadores/${encodeURIComponent(row.id)}`}
+                    className="text-indigo-600 hover:underline"
+                  >
+                    Ver cliente
+                  </Link>
+                  <Link
                     href={`/clientes/pagadores/${encodeURIComponent(row.id)}/editar`}
                     className="text-indigo-600 hover:underline"
                   >

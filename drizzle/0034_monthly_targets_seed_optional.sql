@@ -1,0 +1,7 @@
+-- Seed opcional: exemplo de meta para o mês (executar manualmente se desejar)
+-- INSERT INTO monthly_targets (month, llc_target, revenue_target_cents)
+-- VALUES ('2026-02', 50, 5000000)
+-- ON CONFLICT (month) DO UPDATE
+-- SET llc_target = EXCLUDED.llc_target,
+--     revenue_target_cents = EXCLUDED.revenue_target_cents,
+--     updated_at = now();
