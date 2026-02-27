@@ -1,5 +1,9 @@
 import { NextRequest, NextResponse } from "next/server";
-import { getPersonDashboard } from "@/lib/persons/repo";
+import {
+  getPersonDashboard,
+  personGroupExists,
+  getEmptyPersonDashboardPayload,
+} from "@/lib/persons/repo";
 import { personGroupIdParamSchema } from "@/lib/persons/schemas";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +20,19 @@ export async function GET(
     );
   }
 
-  const payload = await getPersonDashboard(parsed.data.personGroupId);
+  const personGroupId = parsed.data.personGroupId;
+  let payload = await getPersonDashboard(personGroupId);
+
   if (!payload) {
-    return NextResponse.json(
-      { error: "Grupo da pessoa não encontrado ou sem empresas" },
-      { status: 404 }
-    );
+    const exists = await personGroupExists(personGroupId);
+    if (exists) {
+      payload = getEmptyPersonDashboardPayload(personGroupId);
+    } else {
+      return NextResponse.json(
+        { error: "Grupo da pessoa não encontrado ou sem empresas" },
+        { status: 404 }
+      );
+    }
   }
 
   return NextResponse.json(payload);

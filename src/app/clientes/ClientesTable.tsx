@@ -296,7 +296,7 @@ export function ClientesTable({ items }: ClientesTableProps) {
                         Ver empresas
                       </Link>
                       <Link
-                        href={`/persons/${row.personGroupId}`}
+                        href={`/clientes/pagadores/${row.personGroupId}`}
                         className="text-indigo-600 hover:underline"
                       >
                         Painel

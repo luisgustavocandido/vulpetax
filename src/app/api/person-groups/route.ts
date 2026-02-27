@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
 import { sql } from "drizzle-orm";
 import { db } from "@/db";
 import { createPersonGroupSchema } from "@/lib/personGroups/validators";
@@ -253,6 +254,7 @@ export async function POST(request: NextRequest) {
 
   try {
     const result = await createPersonGroup(parsed.data);
+    revalidatePath("/clientes");
     return NextResponse.json({ personGroupId: result.personGroupId }, { status: 201 });
   } catch (err: unknown) {
     console.error("[POST /api/person-groups]", err);

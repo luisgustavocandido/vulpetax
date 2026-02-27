@@ -11,6 +11,7 @@ export type CustomerRow = {
   city: string | null;
   country: string | null;
   companiesCount: number;
+  source: "customer" | "person_group";
 };
 
 type ClientesPagadoresTableProps = {
@@ -88,12 +89,21 @@ export function ClientesPagadoresTable({ items }: ClientesPagadoresTableProps) {
                   >
                     Editar
                   </Link>
-                  <Link
-                    href={`/empresas?customerId=${encodeURIComponent(row.id)}`}
-                    className="text-indigo-600 hover:underline"
-                  >
-                    Ver empresas
-                  </Link>
+                  {row.source === "customer" ? (
+                    <Link
+                      href={`/empresas?customerId=${encodeURIComponent(row.id)}`}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Ver empresas
+                    </Link>
+                  ) : (
+                    <Link
+                      href={`/empresas/person/${encodeURIComponent(row.id)}`}
+                      className="text-indigo-600 hover:underline"
+                    >
+                      Ver empresas
+                    </Link>
+                  )}
                 </span>
               </td>
             </tr>

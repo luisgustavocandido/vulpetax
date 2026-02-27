@@ -20,6 +20,8 @@ type Props = {
   onChange?: (value: string) => void;
   required?: boolean;
   className?: string;
+  /** Para testes E2E (data-testid no botão do select). */
+  dataTestId?: string;
 };
 
 /**
@@ -32,6 +34,7 @@ export function CountrySelectForAddress({
   onChange,
   required = false,
   className = "",
+  dataTestId,
 }: Props) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
@@ -84,6 +87,9 @@ export function CountrySelectForAddress({
         type="button"
         onClick={() => setOpen(!open)}
         className="flex w-full items-center justify-between rounded-md border border-gray-300 bg-white px-3 py-2 text-left text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        {...(dataTestId ? { "data-testid": dataTestId } : {})}
       >
         <span className={!selected?.name ? "text-gray-500" : ""}>
           {selected?.name ?? (required ? "Selecione o país" : "Selecione (opcional)")}

@@ -40,7 +40,7 @@ export default async function ClientesPage({ searchParams }: PageProps) {
   const base = getBaseUrlFromHeaders(headersList);
   const cookie = headersList.get("cookie") ?? "";
 
-  let customersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; addressLine1: string | null; city: string | null; country: string | null; companiesCount: number }>; total: number } = { items: [], total: 0 };
+  let customersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; addressLine1: string | null; city: string | null; country: string | null; companiesCount: number; source: "customer" | "person_group" }>; total: number } = { items: [], total: 0 };
   let partnersData: { items: Array<{ id: string; fullName: string; email: string | null; phone: string | null; role: string; percentage: number; company: { id: string; name: string; code: string } }>; total: number } = { items: [], total: 0 };
 
   if (tab === "customers") {

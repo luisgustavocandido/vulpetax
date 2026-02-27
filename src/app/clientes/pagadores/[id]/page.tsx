@@ -5,6 +5,7 @@ import { notFound } from "next/navigation";
 import { formatUSD } from "@/lib/dashboardFilters";
 import { CustomerServicesSection } from "./CustomerServicesSection";
 import { CustomerChargesSection } from "./CustomerChargesSection";
+import { ClientePagadorDeleteButton } from "./ClientePagadorDeleteButton";
 
 type PageProps = {
   params: Promise<{ id: string }>;
@@ -143,12 +144,15 @@ export default async function ClientePagadorDetailPage({ params }: PageProps) {
             )}
             <p className="mt-1 max-w-md text-sm text-gray-500">{addressStr}</p>
           </div>
-          <Link
-            href={`/clientes/pagadores/${encodeURIComponent(customerId)}/editar`}
-            className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
-          >
-            Editar cliente
-          </Link>
+          <div className="flex flex-wrap items-center gap-2">
+            <Link
+              href={`/clientes/pagadores/${encodeURIComponent(customerId)}/editar`}
+              className="rounded-md border border-gray-300 bg-white px-4 py-2 text-sm font-medium text-gray-700 hover:bg-gray-50"
+            >
+              Editar cliente
+            </Link>
+            <ClientePagadorDeleteButton id={customerId} customerName={customer.fullName} />
+          </div>
         </div>
       </div>
 
@@ -192,7 +196,7 @@ export default async function ClientePagadorDetailPage({ params }: PageProps) {
         <div className="mb-3 flex items-center justify-between">
           <h2 className="text-lg font-semibold text-gray-900">Empresas vinculadas</h2>
           <Link
-            href={`/empresas?customerId=${encodeURIComponent(customerId)}`}
+            href={`/empresas?customerId=${encodeURIComponent(customer.id)}`}
             className="text-sm font-medium text-indigo-600 hover:underline"
           >
             Ver todas

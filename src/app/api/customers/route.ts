@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createCustomerSchema } from "@/lib/customers/validators";
-import { createCustomer, listCustomers } from "@/lib/customers/repo";
+import { createCustomer, listCustomersWithPersonGroups } from "@/lib/customers/repo";
 
 export async function GET(request: NextRequest) {
   try {
@@ -9,7 +9,7 @@ export async function GET(request: NextRequest) {
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 20));
     const sort = (searchParams.get("sort") as "name_asc" | "name_desc" | "recent") || "name_asc";
-    const result = await listCustomers({ q, page, limit, sort });
+    const result = await listCustomersWithPersonGroups({ q, page, limit, sort });
     return NextResponse.json(result);
   } catch (err) {
     console.error("[GET /api/customers]", err);

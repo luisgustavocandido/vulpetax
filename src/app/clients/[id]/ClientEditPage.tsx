@@ -304,7 +304,7 @@ export function ClientEditPage({ clientId, initialClient, basePath = "/clients" 
                   Ver todas as empresas
                 </Link>
                 <Link
-                  href={`/persons/${initialClient.personGroupId}`}
+                  href={`/clientes/pagadores/${initialClient.personGroupId}`}
                   className="text-sm font-medium text-indigo-600 hover:underline"
                 >
                   Abrir painel da pessoa

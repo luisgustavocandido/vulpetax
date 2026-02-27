@@ -8,6 +8,7 @@ import {
   annualReportObligations,
   billingCharges,
   clientLineItems,
+  personGroups,
 } from "@/db/schema";
 import { and, eq, inArray, isNull, sql, asc } from "drizzle-orm";
 import type {
@@ -368,6 +369,40 @@ export async function getPersonAddressCharges(
   }));
 
   return { totals, items };
+}
+
+/**
+ * Verifica se existe um registro em person_groups com o id dado (pessoa cadastrada, mesmo sem empresas).
+ */
+export async function personGroupExists(personGroupId: string): Promise<boolean> {
+  const [row] = await db
+    .select({ id: personGroups.id })
+    .from(personGroups)
+    .where(eq(personGroups.id, personGroupId))
+    .limit(1);
+  return !!row;
+}
+
+/**
+ * Payload vazio do dashboard (pessoa sem empresas ainda).
+ */
+export function getEmptyPersonDashboardPayload(personGroupId: string): PersonDashboardPayload {
+  return {
+    personGroupId,
+    companies: { total: 0, items: [] },
+    processes: {
+      totals: { open: 0, in_progress: 0, done: 0 },
+      items: [],
+    },
+    annualReports: {
+      totals: { pending: 0, overdue: 0, done: 0, canceled: 0 },
+      items: [],
+    },
+    addressCharges: {
+      totals: { pending: 0, overdue: 0, paid: 0, canceled: 0 },
+      items: [],
+    },
+  };
 }
 
 /**

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listCustomerCharges } from "@/lib/customers/billingOverviewRepo";
 import { chargeListQuerySchema } from "@/lib/customers/billingSchemas";
+import { resolveToCustomerId } from "@/lib/customers/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -9,14 +10,17 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * GET /api/customers/[id]/billing/charges
- * Lista cobranças das empresas do cliente pagador (paginação e filtros server-side).
- * Ex: ?page=1&limit=20&status=open&dueFrom=2025-01-01&sort=dueDate_asc
+ * Lista cobranças do cliente pagador. [id] pode ser personGroupId ou customerId.
  */
 export async function GET(request: NextRequest, context: Params) {
   try {
-    const { id: customerId } = await context.params;
-    if (!customerId) {
+    const { id } = await context.params;
+    if (!id) {
       return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+    }
+    const customerId = await resolveToCustomerId(id);
+    if (!customerId) {
+      return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { z } from "zod";
 import { listCustomerCompanies } from "@/lib/customers/overviewRepo";
 import { listCustomerCompaniesQuerySchema } from "@/lib/customers/overviewSchemas";
+import { resolveToCustomerId } from "@/lib/customers/repo";
 
 export const dynamic = "force-dynamic";
 
@@ -9,13 +10,17 @@ type Params = { params: Promise<{ id: string }> };
 
 /**
  * GET /api/customers/[id]/companies
- * Lista empresas vinculadas ao cliente pagador (paginação e busca server-side).
+ * Lista empresas vinculadas ao cliente pagador. [id] pode ser personGroupId ou customerId.
  */
 export async function GET(request: NextRequest, context: Params) {
   try {
-    const { id: customerId } = await context.params;
-    if (!customerId) {
+    const { id } = await context.params;
+    if (!id) {
       return NextResponse.json({ error: "id obrigatório" }, { status: 400 });
+    }
+    const customerId = await resolveToCustomerId(id);
+    if (!customerId) {
+      return NextResponse.json({ error: "Cliente não encontrado" }, { status: 404 });
     }
 
     const { searchParams } = new URL(request.url);

@@ -1,6 +1,6 @@
 {
   "name": "eafc",
-  "version": "0.1.0",
+  "version": "4.1.0",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -12,6 +12,7 @@
     "db:generate": "drizzle-kit generate",
     "db:migrate": "drizzle-kit migrate",
     "db:ensure-customers": "npx tsx src/scripts/ensureCustomersTable.ts",
+    "db:ensure-person-groups": "npx tsx src/scripts/ensurePersonGroupsTable.ts",
     "db:ensure-monthly-targets": "npx tsx src/scripts/ensureMonthlyTargetsTable.ts",
     "db:ensure-monthly-targets-by-commercial": "npx tsx src/scripts/ensureMonthlyTargetsByCommercialTable.ts",
     "db:push": "drizzle-kit push",
@@ -23,7 +24,11 @@
     "pdf:update-template": "npx tsx scripts/update-pos-venda-template-placeholders.ts",
     "pdf:test-placeholders": "npx tsx src/lib/pdf/__tests__/placeholderCoverage.test.ts",
     "pdf:ping-gotenberg": "npx tsx scripts/ping-gotenberg.ts",
-    "test:line-items": "npx tsx src/types/__tests__/lineItems.test.ts"
+    "test:line-items": "npx tsx src/types/__tests__/lineItems.test.ts",
+    "test:e2e": "playwright test",
+    "test:e2e:ui": "playwright test --ui",
+    "test:e2e:headed": "playwright test --headed",
+    "test:e2e:customer-person": "playwright test tests/e2e/customer-person-registration.spec.ts"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -45,6 +50,7 @@
     "zod": "^4.3.6"
   },
   "devDependencies": {
+    "@playwright/test": "^1.58.2",
     "@types/bcryptjs": "^2.4.6",
     "@types/node": "^20",
     "@types/pg": "^8.16.0",
