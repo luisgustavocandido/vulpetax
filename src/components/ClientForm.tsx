@@ -1640,24 +1640,39 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                         <div className="sm:col-span-2">
                           <label className="block text-xs font-medium text-gray-500">Nome completo *</label>
                           <input
-                            value={((p as PartnerState).customerInline?.fullName ?? "").trim()}
-                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), fullName: e.target.value })}
+                            value={(p as PartnerState).customerInline?.fullName ?? ""}
+                            onChange={(e) =>
+                              updatePartner(i, "customerInline", {
+                                ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE),
+                                fullName: e.target.value,
+                              })
+                            }
                             className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                           />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500">Given name *</label>
                           <input
-                            value={((p as PartnerState).customerInline?.givenName ?? "").trim()}
-                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), givenName: e.target.value })}
+                            value={(p as PartnerState).customerInline?.givenName ?? ""}
+                            onChange={(e) =>
+                              updatePartner(i, "customerInline", {
+                                ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE),
+                                givenName: e.target.value,
+                              })
+                            }
                             className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                           />
                         </div>
                         <div>
                           <label className="block text-xs font-medium text-gray-500">Sobrenome *</label>
                           <input
-                            value={((p as PartnerState).customerInline?.surName ?? "").trim()}
-                            onChange={(e) => updatePartner(i, "customerInline", { ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE), surName: e.target.value })}
+                            value={(p as PartnerState).customerInline?.surName ?? ""}
+                            onChange={(e) =>
+                              updatePartner(i, "customerInline", {
+                                ...((p as PartnerState).customerInline ?? DEFAULT_CUSTOMER_INLINE),
+                                surName: e.target.value,
+                              })
+                            }
                             className="mt-1 block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                           />
                         </div>
