@@ -187,14 +187,21 @@ export async function PATCH(
     clientUpdates.companyNameNormalized = normalizeCompanyName(data.companyName);
   }
   // customerCode não é alterável (gerado automaticamente na criação)
-  if (data.paymentDate !== undefined) clientUpdates.paymentDate = data.paymentDate?.trim() || null;
   if (data.commercial !== undefined) clientUpdates.commercial = data.commercial;
   if (data.sdr !== undefined) clientUpdates.sdr = data.sdr;
   if (data.businessType !== undefined) clientUpdates.businessType = data.businessType;
   if (data.paymentMethod !== undefined) clientUpdates.paymentMethod = data.paymentMethod;
   if (data.anonymous !== undefined) clientUpdates.anonymous = data.anonymous;
   if (data.holding !== undefined) clientUpdates.holding = data.holding;
-  if (data.affiliate !== undefined) clientUpdates.affiliate = data.affiliate;
+  if (data.affiliate !== undefined) {
+    clientUpdates.affiliate = data.affiliate;
+    if (!data.affiliate) {
+      clientUpdates.affiliateType = null;
+      clientUpdates.affiliateOtherText = null;
+    }
+  }
+  if (data.affiliateType !== undefined) clientUpdates.affiliateType = data.affiliateType?.trim() || null;
+  if (data.affiliateOtherText !== undefined) clientUpdates.affiliateOtherText = data.affiliateOtherText?.trim() || null;
   if (data.express !== undefined) clientUpdates.express = data.express;
   if (data.notes !== undefined) clientUpdates.notes = data.notes;
   if (data.email !== undefined) clientUpdates.email = data.email?.trim() || null;

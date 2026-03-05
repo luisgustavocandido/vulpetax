@@ -4,6 +4,7 @@
  */
 
 import type { BillingPeriod, LineItemKind, CommercialSdr, AddressProvider } from "@/db/schema";
+import { addOneMonth } from "@/lib/dates/addOneMonth";
 import { addOneYear } from "@/lib/dates/addOneYear";
 import { getStateByCode } from "@/constants/usStates";
 
@@ -25,6 +26,12 @@ export function computeExpirationIsoFromSaleDate(iso: string): string | null {
   const sale = parseIsoDate(iso);
   if (!sale) return null;
   return addOneYear(sale).toISOString().slice(0, 10);
+}
+
+function computeExpirationMensalIso(iso: string): string | null {
+  const sale = parseIsoDate(iso);
+  if (!sale) return null;
+  return addOneMonth(sale).toISOString().slice(0, 10);
 }
 
 export type LineItemForDb = {
@@ -73,10 +80,12 @@ export function normalizeLineItemForDb(item: {
   const saleDate = item.saleDate?.trim() || null;
   const expirationDate =
     isEndereco && billingPeriod === "Anual" && saleDate
-      ? computeExpirationIsoFromSaleDate(saleDate)
-      : isEndereco && billingPeriod === "Mensal"
-        ? null
-        : null;
+      ? (item.expirationDate?.trim() || computeExpirationIsoFromSaleDate(saleDate))
+      : isEndereco && billingPeriod === "Mensal" && saleDate
+        ? (item.expirationDate?.trim() || computeExpirationMensalIso(saleDate))
+        : isEndereco
+          ? (item.expirationDate?.trim() || null)
+          : null;
   const rawCents = Number(item.valueCents);
   const valueCents = Number.isFinite(rawCents) && rawCents >= 0 ? Math.round(rawCents) : 0;
 

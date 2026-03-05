@@ -195,8 +195,12 @@ export async function POST(request: NextRequest) {
   delete bodyForSchema.items;
   const parsed = createClientSchema.safeParse(bodyForSchema);
   if (!parsed.success) {
+    const details = parsed.error.flatten();
+    if (process.env.NODE_ENV === "development") {
+      console.warn("[POST /api/clients] Validação falhou:", JSON.stringify(details, null, 2));
+    }
     return NextResponse.json(
-      { error: "Dados inválidos", details: parsed.error.flatten() },
+      { error: "Dados inválidos", details },
       { status: 400 }
     );
   }
@@ -248,7 +252,6 @@ export async function POST(request: NextRequest) {
           companyName: data.companyName,
           companyNameNormalized,
           customerCode: existing.customerCode, // preservar ao deduplicar
-          paymentDate: data.paymentDate?.trim() || null,
           commercial: (data.commercial as CommercialSdr) ?? null,
           sdr: (data.sdr as CommercialSdr) ?? null,
           businessType: data.businessType ?? null,
@@ -256,6 +259,8 @@ export async function POST(request: NextRequest) {
           anonymous: data.anonymous ?? false,
           holding: data.holding ?? false,
           affiliate: data.affiliate ?? false,
+          affiliateType: data.affiliate ? (data.affiliateType?.trim() || null) : null,
+          affiliateOtherText: data.affiliate && data.affiliateType === "Outros" ? (data.affiliateOtherText?.trim() || null) : null,
           express: data.express ?? false,
           notes: data.notes ?? null,
           email: data.email?.trim() || null,
@@ -330,7 +335,6 @@ export async function POST(request: NextRequest) {
         companyName: data.companyName,
         companyNameNormalized,
         customerCode,
-        paymentDate: data.paymentDate?.trim() || null,
         commercial: (data.commercial as CommercialSdr) ?? null,
         sdr: (data.sdr as CommercialSdr) ?? null,
         businessType: data.businessType ?? null,
@@ -338,6 +342,8 @@ export async function POST(request: NextRequest) {
         anonymous: data.anonymous ?? false,
         holding: data.holding ?? false,
         affiliate: data.affiliate ?? false,
+        affiliateType: data.affiliate ? (data.affiliateType?.trim() || null) : null,
+        affiliateOtherText: data.affiliate && data.affiliateType === "Outros" ? (data.affiliateOtherText?.trim() || null) : null,
         express: data.express ?? false,
         notes: data.notes ?? null,
         email: data.email?.trim() || null,

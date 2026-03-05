@@ -15,6 +15,24 @@ const partnerRoleSchema = z.enum(PARTNER_ROLES as unknown as [string, ...string[
 const billingPeriodSchema = z.enum(BILLING_PERIOD_VALUES as unknown as [string, ...string[]]);
 const addressProviderSchema = z.enum(ADDRESS_PROVIDER_VALUES as unknown as [string, ...string[]]);
 
+/** Opções fixas de description quando kind = ServicoAdicional */
+const SERVICO_ADICIONAL_DESCRIPTION_OPTIONS = [
+  "ITIN",
+  "Página WEB + Dominio + E-mail (1 ano)",
+  "Manager",
+  "Conta Pessoal (Truist Bank)",
+];
+
+/** Opções fixas de description quando kind = BancoTradicional */
+const BANCO_TRADICIONAL_DESCRIPTION_OPTIONS = [
+  "WAB",
+  "PNB",
+  "Truist Bank",
+  "Ibanera",
+  "Euro Exchange",
+  "Chase Bank",
+];
+
 const isoDateRegex = /^\d{4}-\d{2}-\d{2}$/;
 const uuidOptional = z.string().uuid().optional();
 
@@ -59,6 +77,78 @@ export const lineItemInputSchema = z
           path: ["paymentMethodCustom"],
         });
       }
+    }
+
+    // Validação para Mensalidade: description deve ser Founder ou Traditional
+    if (item.kind === "Mensalidade") {
+      if (!item.description || String(item.description).trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Descrição é obrigatória para Mensalidade (selecione Founder ou Traditional)",
+          path: ["description"],
+        });
+      } else if (item.description !== "Founder" && item.description !== "Traditional") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Para Mensalidade, a descrição deve ser Founder ou Traditional",
+          path: ["description"],
+        });
+      }
+      return;
+    }
+
+    // Validação para Gateway: description deve ser Stripe ou Paypal
+    if (item.kind === "Gateway") {
+      if (!item.description || String(item.description).trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Descrição é obrigatória para Gateway (selecione Stripe ou Paypal)",
+          path: ["description"],
+        });
+      } else if (item.description !== "Stripe" && item.description !== "Paypal") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Para Gateway, a descrição deve ser Stripe ou Paypal",
+          path: ["description"],
+        });
+      }
+      return;
+    }
+
+    // Validação para Serviço Adicional: description deve ser uma das opções fixas
+    if (item.kind === "ServicoAdicional") {
+      if (!item.description || String(item.description).trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Descrição é obrigatória para Serviço Adicional (selecione uma das opções)",
+          path: ["description"],
+        });
+      } else if (!SERVICO_ADICIONAL_DESCRIPTION_OPTIONS.includes(item.description)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Para Serviço Adicional, a descrição deve ser uma das opções listadas",
+          path: ["description"],
+        });
+      }
+      return;
+    }
+
+    // Validação para Banco Tradicional: description deve ser uma das opções fixas
+    if (item.kind === "BancoTradicional") {
+      if (!item.description || String(item.description).trim().length < 1) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Descrição é obrigatória para Banco Tradicional (selecione uma das opções)",
+          path: ["description"],
+        });
+      } else if (!BANCO_TRADICIONAL_DESCRIPTION_OPTIONS.includes(item.description)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Para Banco Tradicional, a descrição deve ser uma das opções listadas",
+          path: ["description"],
+        });
+      }
+      return;
     }
 
     // Validações para LLC
@@ -135,11 +225,24 @@ export const lineItemInputSchema = z
           path: ["saleDate"],
         });
       }
-    } else {
-      if (item.expirationDate != null) {
+    } else if (item.billingPeriod === "Mensal") {
+      if (!item.saleDate) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          message: "Expiração deve estar vazia para periodicidade Mensal",
+          message: "Sale Date é obrigatório para Endereço com periodicidade Mensal",
+          path: ["saleDate"],
+        });
+      }
+      if (!item.expirationDate || String(item.expirationDate).trim() === "") {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Expiração é obrigatória para periodicidade Mensal",
+          path: ["expirationDate"],
+        });
+      } else if (item.saleDate && item.expirationDate < item.saleDate) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: "Expiração deve ser >= Sale Date",
           path: ["expirationDate"],
         });
       }
@@ -279,7 +382,6 @@ export const createClientSchema = z
     sourceClientId: z.string().uuid().optional(),
     /** Quando preenchido (ex.: cadastro de pessoa + empresa), novo cliente usa este personGroupId (sem dedup). */
     personGroupId: z.string().uuid().optional(),
-    paymentDate: z.string().optional(), // ISO date "YYYY-MM-DD"
     commercial: commercialSdrSchema.optional(),
     sdr: commercialSdrSchema.optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
@@ -288,12 +390,25 @@ export const createClientSchema = z
     anonymous: z.boolean().optional().default(false),
     holding: z.boolean().optional().default(false),
     affiliate: z.boolean().optional().default(false),
+    affiliateType: z.string().max(50).nullable().optional(),
+    affiliateOtherText: z.string().max(500).nullable().optional(),
     express: z.boolean().optional().default(false),
     notes: z.string().max(2000).optional(),
     ...personalAddressFieldsOptional,
     lineItems: z.array(lineItemInputSchema).optional().default([]),
     partners: z.array(partnerSchemaForUpdate).optional().default([]),
   })
+  .refine(
+    (data) => !data.affiliate || (data.affiliateType && ["Parceiro", "Afiliado", "Outros"].includes(data.affiliateType)),
+    { message: "Selecione o tipo de afiliado (Parceiro, Afiliado ou Outros).", path: ["affiliateType"] }
+  )
+  .refine(
+    (data) =>
+      !data.affiliate ||
+      data.affiliateType !== "Outros" ||
+      (data.affiliateOtherText != null && String(data.affiliateOtherText).trim().length > 0),
+    { message: "Especifique o tipo de afiliado quando selecionar Outros.", path: ["affiliateOtherText"] }
+  )
   .refine(
     (data) => partnersSumRefine(data.partners ?? []),
     { message: "A soma das participações dos sócios não pode exceder 100%", path: ["partners"] }
@@ -315,7 +430,6 @@ export const updateClientSchema = z
   .object({
     companyName: z.string().min(1, "Empresa é obrigatória").max(255).optional(),
     customerCode: z.string().max(100).optional(),
-    paymentDate: z.string().optional(),
     commercial: commercialSdrSchema.optional(),
     sdr: commercialSdrSchema.optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
@@ -324,12 +438,25 @@ export const updateClientSchema = z
     anonymous: z.boolean().optional(),
     holding: z.boolean().optional(),
     affiliate: z.boolean().optional(),
+    affiliateType: z.string().max(50).nullable().optional(),
+    affiliateOtherText: z.string().max(500).nullable().optional(),
     express: z.boolean().optional(),
     notes: z.string().max(2000).optional(),
     ...personalAddressFieldsOptional,
     lineItems: z.array(lineItemInputSchema).optional(),
     partners: z.array(partnerSchemaForUpdate).optional(),
   })
+  .refine(
+    (data) => !data.affiliate || (data.affiliateType && ["Parceiro", "Afiliado", "Outros"].includes(data.affiliateType)),
+    { message: "Selecione o tipo de afiliado (Parceiro, Afiliado ou Outros).", path: ["affiliateType"] }
+  )
+  .refine(
+    (data) =>
+      !data.affiliate ||
+      data.affiliateType !== "Outros" ||
+      (data.affiliateOtherText != null && String(data.affiliateOtherText).trim().length > 0),
+    { message: "Especifique o tipo de afiliado quando selecionar Outros.", path: ["affiliateOtherText"] }
+  )
   .refine(
     (data) => !data.partners || partnersSumRefine(data.partners),
     { message: "A soma das participações dos sócios não pode exceder 100%", path: ["partners"] }

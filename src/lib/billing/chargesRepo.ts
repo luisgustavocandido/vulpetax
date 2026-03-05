@@ -3,6 +3,8 @@ import { billingCharges, clients, clientLineItems } from "@/db/schema";
 import type { BillingChargeStatus } from "@/db/schema";
 import { and, eq, sql, desc, asc, gte, lte, or, isNull, inArray } from "drizzle-orm";
 import type { SortOrder } from "@/types/billingFilters";
+import { addOneMonth } from "@/lib/dates/addOneMonth";
+import { addOneYear } from "@/lib/dates/addOneYear";
 
 export type CreateChargeInput = {
   clientId: string;
@@ -87,6 +89,51 @@ export async function markCanceled(params: {
 }
 
 const todayIso = () => new Date().toISOString().slice(0, 10);
+
+/** Converte string/Date para "YYYY-MM-DD". */
+function toIsoDate(s: string | Date | null | undefined): string | null {
+  if (s == null) return null;
+  if (typeof s === "string") return s.trim().slice(0, 10) || null;
+  return s.toISOString().slice(0, 10);
+}
+
+/** Parse "YYYY-MM-DD" em Date UTC. */
+function parseIso(s: string | null | undefined): Date | null {
+  const iso = toIsoDate(s);
+  if (!iso || !/^\d{4}-\d{2}-\d{2}$/.test(iso)) return null;
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d));
+}
+
+/**
+ * Normaliza periodEnd e dueDate conforme a periodicidade do item.
+ * Mensal: período = periodStart + 1 mês; Anual: período = periodStart + 1 ano.
+ * Garante que "Expira em" e o fim do período sejam consistentes.
+ */
+function normalizePeriodForDisplay(
+  periodStart: string | Date | null,
+  periodEnd: string | Date | null,
+  dueDate: string | Date | null,
+  billingPeriod: string | null,
+  lineItemExpirationDate: string | Date | null
+): { periodEnd: string | null; dueDate: string | null } {
+  const start = toIsoDate(periodStart);
+  if (!start) return { periodEnd: toIsoDate(periodEnd), dueDate: toIsoDate(dueDate) };
+  const startDate = parseIso(start);
+  if (!startDate) return { periodEnd: toIsoDate(periodEnd), dueDate: toIsoDate(dueDate) };
+
+  if (billingPeriod === "Mensal") {
+    const end = addOneMonth(startDate).toISOString().slice(0, 10);
+    return { periodEnd: end, dueDate: end };
+  }
+  if (billingPeriod === "Anual") {
+    const end = addOneYear(startDate).toISOString().slice(0, 10);
+    const exp = toIsoDate(lineItemExpirationDate);
+    const finalDue = exp && exp <= end ? exp : end;
+    return { periodEnd: end, dueDate: finalDue };
+  }
+  return { periodEnd: toIsoDate(periodEnd), dueDate: toIsoDate(dueDate) };
+}
 
 export type UpdateChargeInput = {
   amountCents?: number;
@@ -249,6 +296,7 @@ export async function listCharges(
       companyName: clients.companyName,
       paymentMethod: clients.paymentMethod,
       billingPeriod: clientLineItems.billingPeriod,
+      expirationDate: clientLineItems.expirationDate,
       addressProvider: clientLineItems.addressProvider,
       addressLine1: clientLineItems.addressLine1,
       addressLine2: clientLineItems.addressLine2,
@@ -346,11 +394,40 @@ export async function listCharges(
     }
   }
 
-  // Adicionar llcState aos resultados
-  const data: ChargeListRow[] = rawData.map((r) => ({
-    ...r,
-    llcState: llcStatesMap.get(r.clientId) ?? null,
-  }));
+  // Adicionar llcState e normalizar Período/Expira em conforme periodicidade
+  type RawRow = RowWithoutLlcState & { expirationDate?: string | Date | null };
+  const data: ChargeListRow[] = (rawData as RawRow[]).map((r) => {
+    const { periodEnd: normEnd, dueDate: normDue } = normalizePeriodForDisplay(
+      r.periodStart,
+      r.periodEnd,
+      r.dueDate,
+      r.billingPeriod,
+      r.expirationDate ?? null
+    );
+    return {
+      id: r.id,
+      clientId: r.clientId,
+      lineItemId: r.lineItemId,
+      periodStart: r.periodStart,
+      periodEnd: normEnd ?? r.periodEnd,
+      amountCents: r.amountCents,
+      currency: r.currency,
+      status: r.status,
+      billingPeriod: r.billingPeriod,
+      dueDate: normDue ?? r.dueDate,
+      paidAt: r.paidAt,
+      paidMethod: r.paidMethod,
+      provider: r.provider,
+      notes: r.notes,
+      companyName: r.companyName,
+      paymentMethod: r.paymentMethod,
+      addressProvider: r.addressProvider,
+      addressLine1: r.addressLine1,
+      addressLine2: r.addressLine2,
+      steNumber: r.steNumber,
+      llcState: llcStatesMap.get(r.clientId) ?? null,
+    };
+  });
 
   return { data, total };
 }

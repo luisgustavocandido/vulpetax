@@ -89,21 +89,6 @@ export function ClientesPagadoresTable({ items }: ClientesPagadoresTableProps) {
                   >
                     Editar
                   </Link>
-                  {row.source === "customer" ? (
-                    <Link
-                      href={`/empresas?customerId=${encodeURIComponent(row.id)}`}
-                      className="text-indigo-600 hover:underline"
-                    >
-                      Ver empresas
-                    </Link>
-                  ) : (
-                    <Link
-                      href={`/empresas/person/${encodeURIComponent(row.id)}`}
-                      className="text-indigo-600 hover:underline"
-                    >
-                      Ver empresas
-                    </Link>
-                  )}
                 </span>
               </td>
             </tr>

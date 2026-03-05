@@ -158,7 +158,7 @@ export function lineItemToApi(form: LineItemForm): LineItemInput {
     commercial: form.commercial,
     sdr: form.sdr,
     billingPeriod: form.kind === "Endereco" ? (form.billingPeriod ?? "Mensal") : null,
-    expirationDate: form.kind === "Endereco" && form.billingPeriod === "Anual" ? form.expirationDate : null,
+    expirationDate: form.kind === "Endereco" && (form.billingPeriod === "Mensal" || form.billingPeriod === "Anual") ? form.expirationDate : null,
     addressProvider: form.kind === "Endereco" ? form.addressProvider : null,
     addressLine1: form.kind === "Endereco" ? form.addressLine1 : null,
     addressLine2: form.kind === "Endereco" ? form.addressLine2 : null,

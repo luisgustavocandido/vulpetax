@@ -140,6 +140,8 @@ export const clients = pgTable(
   anonymous: boolean("anonymous").notNull().default(false),
   holding: boolean("holding").notNull().default(false),
   affiliate: boolean("affiliate").notNull().default(false),
+  affiliateType: varchar("affiliate_type", { length: 50 }),
+  affiliateOtherText: text("affiliate_other_text"),
   express: boolean("express").notNull().default(false),
   notes: text("notes"),
   email: text("email"),

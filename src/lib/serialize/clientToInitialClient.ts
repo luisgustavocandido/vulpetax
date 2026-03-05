@@ -58,6 +58,8 @@ export type InitialClientForEdit = {
   anonymous: boolean;
   holding: boolean;
   affiliate: boolean;
+  affiliateType: string | null;
+  affiliateOtherText: string | null;
   express: boolean;
   notes: string;
   email: string;
@@ -191,6 +193,8 @@ export function clientToInitialClient(raw: unknown): InitialClientForEdit {
     anonymous: toBoolean(c.anonymous),
     holding: toBoolean(c.holding),
     affiliate: toBoolean(c.affiliate),
+    affiliateType: c.affiliateType != null ? toString(c.affiliateType) : null,
+    affiliateOtherText: c.affiliateOtherText != null ? toString(c.affiliateOtherText) : null,
     express: toBoolean(c.express),
     notes: toString(c.notes, ""),
     email: toString(c.email, ""),

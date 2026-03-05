@@ -17,6 +17,7 @@ import { CountrySelectForAddress } from "./CountrySelectForAddress";
 import { BUSINESS_TYPES } from "@/constants/businessTypes";
 import { BusinessTypeCombobox } from "./BusinessTypeCombobox";
 import { PAYMENT_METHODS } from "@/constants/paymentMethods";
+import { addOneMonth } from "@/lib/dates/addOneMonth";
 import { addOneYear } from "@/lib/dates/addOneYear";
 import { lineItemFromApi, ADDRESS_PROVIDER_OPTIONS } from "@/types/lineItems";
 import { LLC_CATEGORIES } from "@/constants/llcCategories";
@@ -25,6 +26,24 @@ import { USStateCombobox } from "./USStateCombobox";
 const ADDRESS_NM_LINE2 = "Clovis, NM, 88101";
 const ADDRESS_FL_LINE1 = "6407 Magnolia St";
 const ADDRESS_FL_LINE2 = "Milton, FL, 32570";
+
+/** Opções fixas de Descrição quando Tipo = Serviço Adicional */
+const SERVICO_ADICIONAL_DESCRIPTION_OPTIONS = [
+  "ITIN",
+  "Página WEB + Dominio + E-mail (1 ano)",
+  "Manager",
+  "Conta Pessoal (Truist Bank)",
+] as const;
+
+/** Opções fixas de Descrição quando Tipo = Banco Tradicional */
+const BANCO_TRADICIONAL_DESCRIPTION_OPTIONS = [
+  "WAB",
+  "PNB",
+  "Truist Bank",
+  "Ibanera",
+  "Euro Exchange",
+  "Chase Bank",
+] as const;
 
 const lineItemFormSchema = z.object({
   dbId: z.string().uuid().optional(),
@@ -54,6 +73,34 @@ const lineItemFormSchema = z.object({
       ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Especifique a forma de pagamento", path: ["paymentMethodCustom"] });
     }
   }
+  // Validação para Mensalidade: descrição deve ser Founder ou Traditional
+  if (item.kind === "Mensalidade") {
+    if (!item.description || (item.description !== "Founder" && item.description !== "Traditional")) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione Founder ou Traditional", path: ["description"] });
+    }
+    return;
+  }
+  // Validação para Gateway: descrição deve ser Stripe ou Paypal
+  if (item.kind === "Gateway") {
+    if (!item.description || (item.description !== "Stripe" && item.description !== "Paypal")) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione Stripe ou Paypal", path: ["description"] });
+    }
+    return;
+  }
+  // Validação para Serviço Adicional: descrição deve ser uma das opções fixas
+  if (item.kind === "ServicoAdicional") {
+    if (!item.description || !SERVICO_ADICIONAL_DESCRIPTION_OPTIONS.includes(item.description as (typeof SERVICO_ADICIONAL_DESCRIPTION_OPTIONS)[number])) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione uma das opções de Serviço Adicional", path: ["description"] });
+    }
+    return;
+  }
+  // Validação para Banco Tradicional: descrição deve ser uma das opções fixas
+  if (item.kind === "BancoTradicional") {
+    if (!item.description || !BANCO_TRADICIONAL_DESCRIPTION_OPTIONS.includes(item.description as (typeof BANCO_TRADICIONAL_DESCRIPTION_OPTIONS)[number])) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione uma das opções de Banco Tradicional", path: ["description"] });
+    }
+    return;
+  }
   // Validações para LLC
   if (item.kind === "LLC") {
     if (!item.llcCategory || String(item.llcCategory).trim().length < 1) {
@@ -81,8 +128,15 @@ const lineItemFormSchema = z.object({
   if (item.billingPeriod === "Anual" && !item.saleDate) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Sale Date é obrigatório para Endereço Anual", path: ["saleDate"] });
   }
-  if (item.billingPeriod === "Mensal" && item.expirationDate != null) {
-    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expiração deve estar vazia para Mensal", path: ["expirationDate"] });
+  if (item.billingPeriod === "Mensal" && !item.saleDate) {
+    ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Sale Date é obrigatório para Endereço Mensal", path: ["saleDate"] });
+  }
+  if (item.billingPeriod === "Mensal") {
+    if (!item.expirationDate || String(item.expirationDate).trim() === "") {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expiração é obrigatória para Periodicidade Mensal", path: ["expirationDate"] });
+    } else if (item.saleDate && item.expirationDate < item.saleDate) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Expiração deve ser >= Sale Date", path: ["expirationDate"] });
+    }
   }
   if (!item.addressProvider) {
     ctx.addIssue({ code: z.ZodIssueCode.custom, message: "Selecione o endereço (New Mexico, Florida, Próprio ou Agente Registrado)", path: ["addressProvider"] });
@@ -141,13 +195,14 @@ const schema = z
   .object({
     companyName: z.string().min(1, "Empresa é obrigatória").max(255),
     customerCode: z.string().max(100).optional(),
-    paymentDate: z.string().optional(),
     commercial: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
     sdr: z.enum(COMMERCIAL_SDR_VALUES as unknown as [string, ...string[]]).optional(),
     businessType: z.string().min(1, "Tipo de negócio é obrigatório").max(255),
     anonymous: z.boolean().default(false),
     holding: z.boolean().default(false),
     affiliate: z.boolean().default(false),
+    affiliateType: z.string().max(50).nullable().optional(),
+    affiliateOtherText: z.string().max(500).nullable().optional(),
     express: z.boolean().default(false),
     notes: z.string().optional(),
     email: z.string().email("E-mail inválido").optional().or(z.literal("")),
@@ -169,6 +224,17 @@ const schema = z
       data.partners.length === 0 ||
       data.partners.filter((p) => p.isPayer === true).length === 1,
     { message: "Selecione exatamente 1 sócio como Cliente (Pagador).", path: ["partners"] }
+  )
+  .refine(
+    (data) => !data.affiliate || (data.affiliateType && ["Parceiro", "Afiliado", "Outros"].includes(data.affiliateType)),
+    { message: "Selecione o tipo de afiliado (Parceiro, Afiliado ou Outros).", path: ["affiliateType"] }
+  )
+  .refine(
+    (data) =>
+      !data.affiliate ||
+      data.affiliateType !== "Outros" ||
+      (data.affiliateOtherText != null && String(data.affiliateOtherText).trim().length > 0),
+    { message: "Especifique o tipo de afiliado quando selecionar Outros.", path: ["affiliateOtherText"] }
   )
   .refine(
     (data) => {
@@ -290,6 +356,13 @@ function computeExpirationIsoFromSaleDate(iso: string): string | undefined {
   return addOneYear(sale).toISOString().slice(0, 10);
 }
 
+/** Expiração = Sale Date + 1 mês (para Periodicidade Mensal). */
+function computeExpirationMensalIso(iso: string): string | undefined {
+  const sale = parseIsoDateToUtcDate(iso);
+  if (!sale) return undefined;
+  return addOneMonth(sale).toISOString().slice(0, 10);
+}
+
 export function ClientForm({ initialData, clientId, sourceClientId, successRedirectPath = "/clients" }: ClientFormProps) {
   const router = useRouter();
   const [error, setError] = useState<string | null>(null);
@@ -356,6 +429,9 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
     loading: boolean;
   } | null>(null);
   const [customerResolvingId, setCustomerResolvingId] = useState<string | null>(null);
+  const [isAffiliate, setIsAffiliate] = useState(initialData?.affiliate ?? false);
+  const [affiliateType, setAffiliateType] = useState<string>(initialData?.affiliateType ?? "");
+  const [affiliateOtherText, setAffiliateOtherText] = useState<string>(initialData?.affiliateOtherText ?? "");
   const customerLookupDebounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const customerLookupAbortRef = useRef<AbortController | null>(null);
 
@@ -466,16 +542,29 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
     });
   }, [partners, fetchAndSetCustomerFull]);
 
+  useEffect(() => {
+    if (initialData?.affiliate != null) {
+      setIsAffiliate(initialData.affiliate);
+      if (!initialData.affiliate) {
+        setAffiliateType("");
+        setAffiliateOtherText("");
+      }
+    }
+    if (initialData?.affiliateType != null) setAffiliateType(initialData.affiliateType);
+    if (initialData?.affiliateOtherText != null) setAffiliateOtherText(initialData.affiliateOtherText);
+  }, [initialData?.affiliate, initialData?.affiliateType, initialData?.affiliateOtherText]);
+
   const defaultValues: Partial<ClientFormData> = {
     companyName: initialData?.companyName ?? "",
     customerCode: initialData?.customerCode ?? "",
-    paymentDate: initialData?.paymentDate ?? "",
     commercial: initialData?.commercial ?? "",
     sdr: initialData?.sdr ?? "",
     businessType: initialData?.businessType ?? "",
     anonymous: initialData?.anonymous ?? false,
     holding: initialData?.holding ?? false,
     affiliate: initialData?.affiliate ?? false,
+    affiliateType: initialData?.affiliateType ?? null,
+    affiliateOtherText: initialData?.affiliateOtherText ?? null,
     express: initialData?.express ?? false,
     notes: initialData?.notes ?? "",
     email: initialData?.email ?? "",
@@ -485,7 +574,14 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
     personalState: initialData?.personalState ?? "",
     personalPostalCode: initialData?.personalPostalCode ?? "",
     personalCountry: initialData?.personalCountry ?? "",
-    lineItems: (initialData?.lineItems ?? []).map((li) => lineItemFromApi(li)),
+    lineItems: (initialData?.lineItems ?? []).map((li) => {
+      const item = lineItemFromApi(li);
+      if (item.kind === "Endereco" && item.billingPeriod === "Mensal" && item.saleDate && (item.expirationDate == null || String(item.expirationDate).trim() === "")) {
+        const computed = computeExpirationMensalIso(item.saleDate);
+        if (computed) return { ...item, expirationDate: computed };
+      }
+      return item;
+    }),
     partners: initialData?.partners ?? [EMPTY_PARTNER],
   };
 
@@ -502,13 +598,22 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
   const { fields: lineItemFields, append: appendLineItem, remove: removeLineItem } = useFieldArray({ control, name: "lineItems" });
 
   const watchedLineItems = watch("lineItems");
-  const setLineItemExpiration = (index: number, saleDate: string | null) => {
+  const setLineItemExpiration = (index: number, saleDate: string | null, billingPeriod: string | null) => {
     if (!saleDate) {
       setValue(`lineItems.${index}.expirationDate`, null);
       return;
     }
-    const exp = computeExpirationIsoFromSaleDate(saleDate);
-    setValue(`lineItems.${index}.expirationDate`, exp ?? null);
+    if (billingPeriod === "Mensal") {
+      const exp = computeExpirationMensalIso(saleDate);
+      setValue(`lineItems.${index}.expirationDate`, exp ?? null);
+      return;
+    }
+    if (billingPeriod === "Anual") {
+      const exp = computeExpirationIsoFromSaleDate(saleDate);
+      setValue(`lineItems.${index}.expirationDate`, exp ?? null);
+      return;
+    }
+    setValue(`lineItems.${index}.expirationDate`, null);
   };
 
   const hasExistingPayer = partners.some((p) => p.isPayer === true);
@@ -640,13 +745,14 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
     const data: ClientFormData = {
       companyName: (fd.get("companyName") ?? "").toString().trim(),
       customerCode: clientId ? (fd.get("customerCode") ?? "").toString().trim() : undefined,
-      paymentDate: (fd.get("paymentDate") ?? "").toString().trim() || undefined,
       commercial: (fd.get("commercial") ?? "").toString().trim() || undefined,
       sdr: (fd.get("sdr") ?? "").toString().trim() || undefined,
       businessType: finalBusinessType,
       anonymous: fd.get("anonymous") === "on",
       holding: fd.get("holding") === "on",
-      affiliate: fd.get("affiliate") === "on",
+      affiliate: isAffiliate,
+      affiliateType: isAffiliate ? (affiliateType || null) : null,
+      affiliateOtherText: isAffiliate && affiliateType === "Outros" ? (affiliateOtherText?.trim() || null) : null,
       express: fd.get("express") === "on",
       notes: (fd.get("notes") ?? "").toString().trim() || undefined,
       email: (fd.get("email") ?? "").toString().trim() || undefined,
@@ -684,7 +790,7 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
         commercial: li.commercial ?? null,
         sdr: li.sdr ?? null,
         billingPeriod: li.kind === "Endereco" ? (li.billingPeriod ?? "Mensal") : null,
-        expirationDate: li.kind === "Endereco" && li.billingPeriod === "Anual" ? li.expirationDate : null,
+        expirationDate: li.kind === "Endereco" && (li.billingPeriod === "Mensal" || li.billingPeriod === "Anual") ? li.expirationDate : null,
         addressProvider: li.kind === "Endereco" ? (li.addressProvider ?? null) : null,
         addressLine1: li.kind === "Endereco" ? (li.addressLine1 ?? null) : null,
         addressLine2: li.kind === "Endereco" ? (li.addressLine2 ?? null) : null,
@@ -772,6 +878,9 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
       {error && (
         <div className="rounded-lg bg-red-50 px-4 py-3 text-sm text-red-700 ring-1 ring-red-100">
           {error}
+          {fieldErrors.lineItems && (
+            <p className="mt-2 font-medium">{fieldErrors.lineItems}</p>
+          )}
         </div>
       )}
       {toast && (
@@ -814,18 +923,6 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
               />
             </div>
           )}
-          <div>
-            <label htmlFor="paymentDate" className="block text-sm font-medium text-gray-700">
-              Data de Pagamento
-            </label>
-            <input
-              id="paymentDate"
-              name="paymentDate"
-              type="date"
-              defaultValue={defaultValues.paymentDate}
-              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
-            />
-          </div>
           <div>
             <label htmlFor="commercial" className="block text-sm font-medium text-gray-700">
               Comercial
@@ -898,6 +995,7 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
               </div>
             )}
           </div>
+          {/* Checkboxes: Anônimo, Holding, Afiliado, Express */}
           <div className="flex flex-wrap gap-6 sm:col-span-2 rounded-lg bg-gray-50 p-4">
             <label className="flex cursor-pointer items-center gap-2">
               <input type="checkbox" name="anonymous" defaultChecked={defaultValues.anonymous} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
@@ -908,7 +1006,19 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
               <span className="text-sm text-gray-700">Holding</span>
             </label>
             <label className="flex cursor-pointer items-center gap-2">
-              <input type="checkbox" name="affiliate" defaultChecked={defaultValues.affiliate} className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <input
+                type="checkbox"
+                checked={isAffiliate}
+                onChange={(e) => {
+                  const checked = e.target.checked;
+                  setIsAffiliate(checked);
+                  if (!checked) {
+                    setAffiliateType("");
+                    setAffiliateOtherText("");
+                  }
+                }}
+                className="h-4 w-4 rounded border-gray-300 text-blue-600 focus:ring-blue-500"
+              />
               <span className="text-sm text-gray-700">Afiliado</span>
             </label>
             <label className="flex cursor-pointer items-center gap-2">
@@ -916,6 +1026,48 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
               <span className="text-sm text-gray-700">Express</span>
             </label>
           </div>
+          {/* Sub-seção Afiliado: Tipo de Afiliado + Especifique (quando Outros) */}
+          {isAffiliate && (
+            <div className="sm:col-span-2 mt-3 transition-opacity duration-200">
+              <div className="rounded-lg border border-gray-200 bg-gray-50 p-4 shadow-sm">
+                <div className="flex flex-col gap-4">
+                  <div>
+                    <label htmlFor="affiliateType" className="block text-sm font-medium text-gray-700">
+                      Tipo de Afiliado
+                    </label>
+                    <select
+                      id="affiliateType"
+                      value={affiliateType}
+                      onChange={(e) => setAffiliateType(e.target.value)}
+                      className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                    >
+                      <option value="">Selecione</option>
+                      <option value="Parceiro">Parceiro</option>
+                      <option value="Afiliado">Afiliado</option>
+                      <option value="Outros">Outros</option>
+                    </select>
+                    {fieldErrors.affiliateType && <p className="mt-1 text-sm text-red-600">{fieldErrors.affiliateType}</p>}
+                  </div>
+                  {affiliateType === "Outros" && (
+                    <div className="transition-opacity duration-200">
+                      <label htmlFor="affiliateOtherText" className="block text-sm font-medium text-gray-700">
+                        Especifique
+                      </label>
+                      <input
+                        id="affiliateOtherText"
+                        type="text"
+                        value={affiliateOtherText}
+                        onChange={(e) => setAffiliateOtherText(e.target.value)}
+                        className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+                        placeholder="Outro tipo"
+                      />
+                      {fieldErrors.affiliateOtherText && <p className="mt-1 text-sm text-red-600">{fieldErrors.affiliateOtherText}</p>}
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       </section>
 
@@ -925,11 +1077,20 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
         <h2 className="border-b border-gray-200 pb-2 text-base font-semibold uppercase tracking-wide text-gray-600">
           Itens
         </h2>
+        {(fieldErrors.lineItems ?? Object.entries(fieldErrors).find(([k]) => k.startsWith("lineItems."))?.[1]) && (
+          <p className="rounded-lg bg-red-50 px-3 py-2 text-sm text-red-600">
+            {fieldErrors.lineItems ?? Object.entries(fieldErrors).find(([k]) => k.startsWith("lineItems."))?.[1]}
+          </p>
+        )}
         <div className="space-y-3">
           {lineItemFields.map((field, i) => {
             const it = watchedLineItems?.[i];
             const isEndereco = it?.kind === "Endereco";
             const isLLC = it?.kind === "LLC";
+            const isMensalidade = it?.kind === "Mensalidade";
+            const isGateway = it?.kind === "Gateway";
+            const isServicoAdicional = it?.kind === "ServicoAdicional";
+            const isBancoTradicional = it?.kind === "BancoTradicional";
             return (
               <div key={field.id} className="rounded-lg border border-gray-200 bg-gray-50/80 p-4 shadow-sm">
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-4">
@@ -952,6 +1113,7 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                             setValue(`lineItems.${i}.llcCategory`, null);
                             setValue(`lineItems.${i}.llcState`, null);
                             setValue(`lineItems.${i}.llcCustomCategory`, null);
+                            setValue(`lineItems.${i}.description`, "");
                           } else if (v === "Endereco") {
                             setValue(`lineItems.${i}.billingPeriod`, "Mensal");
                             setValue(`lineItems.${i}.description`, "");
@@ -1013,7 +1175,77 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                         </div>
                       </div>
                     </>
-                  ) : !isEndereco && (
+                  ) : isMensalidade ? (
+                    <div className="col-span-12 md:col-span-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-500">Descrição</label>
+                        <select
+                          {...register(`lineItems.${i}.description`)}
+                          className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">Selecione</option>
+                          <option value="Founder">Founder</option>
+                          <option value="Traditional">Traditional</option>
+                        </select>
+                        {(formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]) && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : isGateway ? (
+                    <div className="col-span-12 md:col-span-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-500">Descrição</label>
+                        <select
+                          {...register(`lineItems.${i}.description`)}
+                          className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">Selecione</option>
+                          <option value="Stripe">Stripe</option>
+                          <option value="Paypal">Paypal</option>
+                        </select>
+                        {(formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]) && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : isServicoAdicional ? (
+                    <div className="col-span-12 md:col-span-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-500">Descrição</label>
+                        <select
+                          {...register(`lineItems.${i}.description`)}
+                          className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">Selecione</option>
+                          {SERVICO_ADICIONAL_DESCRIPTION_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                        {(formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]) && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : isBancoTradicional ? (
+                    <div className="col-span-12 md:col-span-3">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-xs font-medium text-gray-500">Descrição</label>
+                        <select
+                          {...register(`lineItems.${i}.description`)}
+                          className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
+                        >
+                          <option value="">Selecione</option>
+                          {BANCO_TRADICIONAL_DESCRIPTION_OPTIONS.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                        {(formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]) && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]}</p>
+                        )}
+                      </div>
+                    </div>
+                  ) : !isEndereco ? (
                     <div className="col-span-12 md:col-span-3">
                       <div className="flex flex-col gap-1">
                         <label className="text-xs font-medium text-gray-500">Descrição</label>
@@ -1022,12 +1254,12 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                           type="text"
                           className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                         />
-                        {formErrors.lineItems?.[i]?.description && (
-                          <p className="text-xs text-red-600">{formErrors.lineItems[i]?.description?.message}</p>
+                        {(formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]) && (
+                          <p className="text-xs text-red-600">{formErrors.lineItems?.[i]?.description?.message ?? fieldErrors[`lineItems.${i}.description`]}</p>
                         )}
                       </div>
                     </div>
-                  )}
+                  ) : null}
                   <div className={isEndereco ? "col-span-12 md:col-span-4" : isLLC ? "col-span-12 md:col-span-2" : "col-span-12 md:col-span-3"}>
                     <div className="flex flex-col gap-1">
                       <label className="text-xs font-medium text-gray-500">Valor (US$)</label>
@@ -1050,7 +1282,7 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                         onChange={(e) => {
                           const v = e.target.value || null;
                           setValue(`lineItems.${i}.saleDate`, v);
-                          if (it?.kind === "Endereco" && it?.billingPeriod === "Anual") setLineItemExpiration(i, v);
+                          if (it?.kind === "Endereco" && (it?.billingPeriod === "Mensal" || it?.billingPeriod === "Anual")) setLineItemExpiration(i, v, it?.billingPeriod ?? null);
                         }}
                       />
                       {formErrors.lineItems?.[i]?.saleDate && (
@@ -1088,8 +1320,7 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                             onChange={(e) => {
                               const v = e.target.value as "Mensal" | "Anual";
                               setValue(`lineItems.${i}.billingPeriod`, v);
-                              if (v === "Mensal") setValue(`lineItems.${i}.expirationDate`, null);
-                              else if (it?.saleDate) setLineItemExpiration(i, it.saleDate);
+                              setLineItemExpiration(i, it?.saleDate ?? null, v);
                             }}
                             className="block w-full rounded border border-gray-300 px-2 py-1.5 text-sm"
                           >
@@ -1112,8 +1343,11 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
                             className="block w-full rounded border border-gray-200 bg-gray-100 px-2 py-1.5 text-sm text-gray-900"
                             value={it?.expirationDate ?? ""}
                           />
+                          {it?.billingPeriod === "Mensal" && (
+                            <p className="text-[11px] text-gray-500">Sale Date + 1 mês</p>
+                          )}
                           {it?.billingPeriod === "Anual" && (
-                            <p className="text-[11px] text-gray-500">Sale Date + 1 ano (server)</p>
+                            <p className="text-[11px] text-gray-500">Sale Date + 1 ano</p>
                           )}
                         </div>
                       </div>
