@@ -57,6 +57,12 @@ export function ClientEditPage({ clientId, initialClient, basePath = "/clients" 
     personalState: initialClient.personalState ?? "",
     personalPostalCode: initialClient.personalPostalCode ?? "",
     personalCountry: initialClient.personalCountry ?? "",
+    einNumber: initialClient.einNumber ?? "",
+    businessId: initialClient.businessId ?? "",
+    companyAddressLine1: initialClient.companyAddressLine1 ?? "",
+    companyAddressLine2: initialClient.companyAddressLine2 ?? "",
+    formationDate: initialClient.formationDate ?? "",
+    annualReportDate: initialClient.annualReportDate ?? "",
     lineItems: initialClient.lineItems ?? [],
     partners: initialClient.partners ?? [],
   };

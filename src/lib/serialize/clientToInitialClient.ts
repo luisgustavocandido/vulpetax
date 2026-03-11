@@ -27,7 +27,7 @@ export type SerializedLineItem = {
   meta?: Record<string, unknown> | null;
 };
 
-/** Sócio serializável (RSC safe) */
+/** Sócio serializável (RSC safe). Inclui dados do customer quando é pagador. */
 export type SerializedPartner = {
   fullName: string;
   role: string;
@@ -42,7 +42,21 @@ export type SerializedPartner = {
   country?: string;
   isPayer: boolean;
   customerId?: string | null;
-  customer?: { id: string; fullName: string; email: string | null; phone: string | null };
+  customer?: {
+    id: string;
+    fullName: string;
+    givenName?: string;
+    surName?: string;
+    citizenshipCountry?: string;
+    email: string | null;
+    phone: string | null;
+    addressLine1?: string | null;
+    addressLine2?: string | null;
+    city?: string | null;
+    stateProvince?: string | null;
+    postalCode?: string | null;
+    country?: string | null;
+  };
 };
 
 /** Cliente inicial para edição — apenas primitivos e arrays serializáveis */
@@ -69,6 +83,12 @@ export type InitialClientForEdit = {
   personalState: string;
   personalPostalCode: string;
   personalCountry: string;
+  einNumber: string;
+  businessId: string;
+  companyAddressLine1: string;
+  companyAddressLine2: string;
+  formationDate: string;
+  annualReportDate: string;
   lineItems: SerializedLineItem[];
   partners: SerializedPartner[];
 };
@@ -160,8 +180,17 @@ function serializePartner(raw: unknown): SerializedPartner {
       ? {
           id: toString(customer.id, ""),
           fullName: toString(customer.fullName, ""),
+          givenName: customer.givenName != null ? toString(customer.givenName) : undefined,
+          surName: customer.surName != null ? toString(customer.surName) : undefined,
+          citizenshipCountry: customer.citizenshipCountry != null ? toString(customer.citizenshipCountry) : undefined,
           email: customer.email != null ? toString(customer.email) : null,
           phone: customer.phone != null ? toString(customer.phone) : null,
+          addressLine1: customer.addressLine1 != null ? toString(customer.addressLine1) : null,
+          addressLine2: customer.addressLine2 != null ? toString(customer.addressLine2) : null,
+          city: customer.city != null ? toString(customer.city) : null,
+          stateProvince: customer.stateProvince != null ? toString(customer.stateProvince) : null,
+          postalCode: customer.postalCode != null ? toString(customer.postalCode) : null,
+          country: customer.country != null ? toString(customer.country) : null,
         }
       : undefined,
   };
@@ -204,6 +233,12 @@ export function clientToInitialClient(raw: unknown): InitialClientForEdit {
     personalState: toString(c.personalState, ""),
     personalPostalCode: toString(c.personalPostalCode, ""),
     personalCountry: toString(c.personalCountry, ""),
+    einNumber: toString(c.einNumber, ""),
+    businessId: toString(c.businessId, ""),
+    companyAddressLine1: toString(c.companyAddressLine1, ""),
+    companyAddressLine2: toString(c.companyAddressLine2, ""),
+    formationDate: toIsoDateString(c.formationDate) || toString(c.formationDate, ""),
+    annualReportDate: toIsoDateString(c.annualReportDate) || toString(c.annualReportDate, ""),
     lineItems,
     partners,
   };

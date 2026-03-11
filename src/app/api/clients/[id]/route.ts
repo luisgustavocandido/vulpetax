@@ -50,8 +50,17 @@ async function mapPartnersWithCustomers(partnersRows: PartnerRow[]) {
           .select({
             id: customers.id,
             fullName: customers.fullName,
+            givenName: customers.givenName,
+            surName: customers.surName,
+            citizenshipCountry: customers.citizenshipCountry,
             email: customers.email,
             phone: customers.phone,
+            addressLine1: customers.addressLine1,
+            addressLine2: customers.addressLine2,
+            city: customers.city,
+            stateProvince: customers.stateProvince,
+            postalCode: customers.postalCode,
+            country: customers.country,
           })
           .from(customers)
           .where(inArray(customers.id, customerIds))
@@ -75,7 +84,21 @@ async function mapPartnersWithCustomers(partnersRows: PartnerRow[]) {
       isPayer: p.isPayer ?? false,
       customerId: p.customerId ?? undefined,
       customer: cust
-        ? { id: cust.id, fullName: cust.fullName, email: cust.email ?? null, phone: cust.phone ?? null }
+        ? {
+            id: cust.id,
+            fullName: cust.fullName,
+            givenName: cust.givenName,
+            surName: cust.surName,
+            citizenshipCountry: cust.citizenshipCountry,
+            email: cust.email ?? null,
+            phone: cust.phone ?? null,
+            addressLine1: cust.addressLine1 ?? null,
+            addressLine2: cust.addressLine2 ?? null,
+            city: cust.city ?? null,
+            stateProvince: cust.stateProvince ?? null,
+            postalCode: cust.postalCode ?? null,
+            country: cust.country ?? null,
+          }
         : undefined,
     };
   });
@@ -211,6 +234,12 @@ export async function PATCH(
   if (data.personalState !== undefined) clientUpdates.personalState = data.personalState?.trim() || null;
   if (data.personalPostalCode !== undefined) clientUpdates.personalPostalCode = data.personalPostalCode?.trim() || null;
   if (data.personalCountry !== undefined) clientUpdates.personalCountry = data.personalCountry?.trim() || null;
+  if (data.einNumber !== undefined) clientUpdates.einNumber = data.einNumber?.trim() || null;
+  if (data.businessId !== undefined) clientUpdates.businessId = data.businessId?.trim() || null;
+  if (data.companyAddressLine1 !== undefined) clientUpdates.companyAddressLine1 = data.companyAddressLine1?.trim() || null;
+  if (data.companyAddressLine2 !== undefined) clientUpdates.companyAddressLine2 = data.companyAddressLine2?.trim() || null;
+  if (data.formationDate !== undefined) clientUpdates.formationDate = data.formationDate?.trim() ? data.formationDate.trim().slice(0, 10) : null;
+  if (data.annualReportDate !== undefined) clientUpdates.annualReportDate = data.annualReportDate?.trim() ? data.annualReportDate.trim().slice(0, 10) : null;
 
   const hasClientUpdates = Object.keys(clientUpdates).length > 0;
   const hasLineItemsInPayload = data.lineItems !== undefined;

@@ -130,9 +130,14 @@ export function ClientTable({
                 {c.paymentMethod ?? "—"}
               </td>
               <td className="whitespace-nowrap px-4 py-2 text-right text-sm">
-                <Link href={`${basePath}/${c.id}`} className="text-blue-600 hover:text-blue-800">
-                  Editar
-                </Link>
+                <span className="inline-flex gap-3">
+                  <Link href={`${basePath}/${c.id}/ver`} className="text-gray-600 hover:text-gray-900">
+                    Ver
+                  </Link>
+                  <Link href={`${basePath}/${c.id}`} className="text-blue-600 hover:text-blue-800">
+                    Editar
+                  </Link>
+                </span>
               </td>
             </tr>
           ))}

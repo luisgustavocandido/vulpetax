@@ -270,6 +270,12 @@ export async function POST(request: NextRequest) {
           personalState: data.personalState?.trim() || null,
           personalPostalCode: data.personalPostalCode?.trim() || null,
           personalCountry: data.personalCountry?.trim() || null,
+          einNumber: data.einNumber?.trim() || null,
+          businessId: data.businessId?.trim() || null,
+          companyAddressLine1: data.companyAddressLine1?.trim() || null,
+          companyAddressLine2: data.companyAddressLine2?.trim() || null,
+          formationDate: dateToIso(data.formationDate),
+          annualReportDate: dateToIso(data.annualReportDate),
           updatedAt: new Date(),
         };
         await tx.update(clients).set(clientUpdates).where(eq(clients.id, winnerId));
@@ -353,6 +359,12 @@ export async function POST(request: NextRequest) {
         personalState: data.personalState?.trim() || null,
         personalPostalCode: data.personalPostalCode?.trim() || null,
         personalCountry: data.personalCountry?.trim() || null,
+        einNumber: data.einNumber?.trim() || null,
+        businessId: data.businessId?.trim() || null,
+        companyAddressLine1: data.companyAddressLine1?.trim() || null,
+        companyAddressLine2: data.companyAddressLine2?.trim() || null,
+        formationDate: dateToIso(data.formationDate),
+        annualReportDate: dateToIso(data.annualReportDate),
         personGroupId: resolvedPersonGroupId,
       };
       const [row] = await tx.insert(clients).values(clientValues).returning({ id: clients.id });

@@ -163,6 +163,13 @@ export const clients = pgTable(
   updatedBy: uuid("updated_by").references(() => users.id),
   deletedAt: timestamp("deleted_at", { withTimezone: true }),
   personGroupId: uuid("person_group_id"),
+  /** Dados da empresa (seção opcional do cadastro) */
+  einNumber: text("ein_number"),
+  businessId: text("business_id"),
+  companyAddressLine1: text("company_address_line1"),
+  companyAddressLine2: text("company_address_line2"),
+  formationDate: date("formation_date"),
+  annualReportDate: date("annual_report_date"),
   },
   (table) => [
     index("clients_company_name_normalized_idx")
