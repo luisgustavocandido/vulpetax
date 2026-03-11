@@ -205,6 +205,13 @@ const schema = z
     affiliateOtherText: z.string().max(500).nullable().optional(),
     express: z.boolean().default(false),
     notes: z.string().optional(),
+    /** Dados da empresa */
+    einNumber: z.string().max(100).optional(),
+    businessId: z.string().max(100).optional(),
+    companyAddressLine1: z.string().max(500).optional(),
+    companyAddressLine2: z.string().max(500).optional(),
+    formationDate: z.string().optional(),
+    annualReportDate: z.string().optional(),
     email: z.string().email("E-mail inválido").optional().or(z.literal("")),
     personalAddressLine1: z.string().optional(),
     personalAddressLine2: z.string().optional(),
@@ -567,6 +574,12 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
     affiliateOtherText: initialData?.affiliateOtherText ?? null,
     express: initialData?.express ?? false,
     notes: initialData?.notes ?? "",
+    einNumber: (initialData as Partial<ClientFormData> | undefined)?.einNumber ?? "",
+    businessId: (initialData as Partial<ClientFormData> | undefined)?.businessId ?? "",
+    companyAddressLine1: (initialData as Partial<ClientFormData> | undefined)?.companyAddressLine1 ?? "",
+    companyAddressLine2: (initialData as Partial<ClientFormData> | undefined)?.companyAddressLine2 ?? "",
+    formationDate: (initialData as Partial<ClientFormData> | undefined)?.formationDate ?? "",
+    annualReportDate: (initialData as Partial<ClientFormData> | undefined)?.annualReportDate ?? "",
     email: initialData?.email ?? "",
     personalAddressLine1: initialData?.personalAddressLine1 ?? "",
     personalAddressLine2: initialData?.personalAddressLine2 ?? "",
@@ -755,6 +768,12 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
       affiliateOtherText: isAffiliate && affiliateType === "Outros" ? (affiliateOtherText?.trim() || null) : null,
       express: fd.get("express") === "on",
       notes: (fd.get("notes") ?? "").toString().trim() || undefined,
+      einNumber: (fd.get("einNumber") ?? "").toString().trim() || undefined,
+      businessId: (fd.get("businessId") ?? "").toString().trim() || undefined,
+      companyAddressLine1: (fd.get("companyAddressLine1") ?? "").toString().trim() || undefined,
+      companyAddressLine2: (fd.get("companyAddressLine2") ?? "").toString().trim() || undefined,
+      formationDate: (fd.get("formationDate") ?? "").toString().trim() || undefined,
+      annualReportDate: (fd.get("annualReportDate") ?? "").toString().trim() || undefined,
       email: (fd.get("email") ?? "").toString().trim() || undefined,
       personalAddressLine1: (fd.get("personalAddressLine1") ?? "").toString().trim() || undefined,
       personalAddressLine2: (fd.get("personalAddressLine2") ?? "").toString().trim() || undefined,
@@ -1068,6 +1087,91 @@ export function ClientForm({ initialData, clientId, sourceClientId, successRedir
               </div>
             </div>
           )}
+        </div>
+      </section>
+
+      {/* DADOS DA EMPRESA */}
+      <section className="space-y-4">
+        <h2 className="border-b border-gray-200 pb-2 text-base font-semibold uppercase tracking-wide text-gray-600">
+          Dados da Empresa
+        </h2>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <div>
+            <label htmlFor="einNumber" className="block text-sm font-medium text-gray-700">
+              EIN
+            </label>
+            <input
+              id="einNumber"
+              name="einNumber"
+              type="text"
+              defaultValue={defaultValues.einNumber}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Número EIN da empresa"
+            />
+          </div>
+          <div>
+            <label htmlFor="businessId" className="block text-sm font-medium text-gray-700">
+              Business ID
+            </label>
+            <input
+              id="businessId"
+              name="businessId"
+              type="text"
+              defaultValue={defaultValues.businessId}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Business ID"
+            />
+          </div>
+          <div>
+            <label htmlFor="companyAddressLine1" className="block text-sm font-medium text-gray-700">
+              Endereço (linha 1)
+            </label>
+            <input
+              id="companyAddressLine1"
+              name="companyAddressLine1"
+              type="text"
+              defaultValue={defaultValues.companyAddressLine1}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Rua, número"
+            />
+          </div>
+          <div>
+            <label htmlFor="companyAddressLine2" className="block text-sm font-medium text-gray-700">
+              Endereço (linha 2)
+            </label>
+            <input
+              id="companyAddressLine2"
+              name="companyAddressLine2"
+              type="text"
+              defaultValue={defaultValues.companyAddressLine2}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+              placeholder="Cidade, estado, CEP"
+            />
+          </div>
+          <div>
+            <label htmlFor="formationDate" className="block text-sm font-medium text-gray-700">
+              Data de Formação
+            </label>
+            <input
+              id="formationDate"
+              name="formationDate"
+              type="date"
+              defaultValue={defaultValues.formationDate}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
+          <div>
+            <label htmlFor="annualReportDate" className="block text-sm font-medium text-gray-700">
+              Data Annual Report
+            </label>
+            <input
+              id="annualReportDate"
+              name="annualReportDate"
+              type="date"
+              defaultValue={defaultValues.annualReportDate}
+              className="mt-1 block w-full rounded-md border border-gray-300 px-3 py-2 text-sm focus:border-blue-500 focus:outline-none focus:ring-1 focus:ring-blue-500"
+            />
+          </div>
         </div>
       </section>
 

@@ -14,6 +14,7 @@ export async function GET(request: NextRequest) {
     const q = searchParams.get("q")?.trim() || undefined;
     const clientId = searchParams.get("clientId")?.trim() || undefined;
     const state = searchParams.get("state")?.trim() || undefined;
+    const commercial = searchParams.get("commercial")?.trim() || undefined;
     const sort = searchParams.get("sort")?.trim() || undefined;
     const page = Math.max(1, Number(searchParams.get("page")) || 1);
     const limit = Math.min(100, Math.max(1, Number(searchParams.get("limit")) || 20));
@@ -29,6 +30,7 @@ export async function GET(request: NextRequest) {
       q,
       clientId,
       state,
+      commercial,
       sort: sort as "dueDateAsc" | "dueDateDesc" | "companyAsc" | "companyDesc" | undefined,
       page,
       limit,
@@ -45,6 +47,7 @@ export async function GET(request: NextRequest) {
       q: filters.q,
       clientId: filters.clientId,
       state: filters.state,
+      commercial: filters.commercial,
     });
 
     return NextResponse.json({

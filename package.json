@@ -25,6 +25,7 @@
     "pdf:test-placeholders": "npx tsx src/lib/pdf/__tests__/placeholderCoverage.test.ts",
     "pdf:ping-gotenberg": "npx tsx scripts/ping-gotenberg.ts",
     "test:line-items": "npx tsx src/types/__tests__/lineItems.test.ts",
+    "test:finance-ranges": "npx tsx src/lib/__tests__/financeDashboardRanges.test.ts",
     "test:e2e": "playwright test",
     "test:e2e:ui": "playwright test --ui",
     "test:e2e:headed": "playwright test --headed",

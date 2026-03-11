@@ -1,6 +1,6 @@
 import { db } from "@/db";
 import { billingCharges, clients, clientLineItems } from "@/db/schema";
-import type { BillingChargeStatus } from "@/db/schema";
+import type { BillingChargeStatus, CommercialSdr } from "@/db/schema";
 import { and, eq, sql, desc, asc, gte, lte, or, isNull, inArray } from "drizzle-orm";
 import type { SortOrder } from "@/types/billingFilters";
 import { addOneMonth } from "@/lib/dates/addOneMonth";
@@ -201,6 +201,7 @@ export type ListChargesFilters = {
   q?: string;
   clientId?: string;
   state?: string; // sigla do estado (ex: "WY")
+  commercial?: string; // ex: "Pablo" — filtra por clients.commercial
   sort?: SortOrder;
   page?: number;
   limit?: number;
@@ -261,6 +262,9 @@ export async function listCharges(
   }
   if (filters.clientId) {
     conditions.push(eq(billingCharges.clientId, filters.clientId));
+  }
+  if (filters.commercial) {
+    conditions.push(eq(clients.commercial, filters.commercial as CommercialSdr));
   }
 
   // Se filtro por estado, adicionar condição via subquery
@@ -531,6 +535,9 @@ export async function getChargesSummary(filters: Partial<ListChargesFilters> = {
   }
   if (filters.clientId) {
     conditions.push(eq(billingCharges.clientId, filters.clientId));
+  }
+  if (filters.commercial) {
+    conditions.push(eq(clients.commercial, filters.commercial as CommercialSdr));
   }
   if (filters.state && filters.state !== "all") {
     const stateUpper = filters.state.toUpperCase();

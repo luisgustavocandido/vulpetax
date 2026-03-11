@@ -63,6 +63,11 @@ export async function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  // Dashboard Financeiro (CEO): acesso por senha própria, sem sessão principal
+  if (pathname.startsWith("/dashboard-financeiro") || pathname.startsWith("/api/finance")) {
+    return NextResponse.next();
+  }
+
   // Sync endpoints: bypass de sessão via x-cron-secret ou Authorization: Bearer
   if (pathname === "/api/sync/tax-form" || pathname === "/api/sync/posvenda-llc") {
     const { getCronSecret } = await import("@/lib/cronAuth");
@@ -107,6 +112,6 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: ["/login", "/login/:path*", "/clients", "/clients/:path*", "/empresas", "/empresas/:path*", "/clientes", "/clientes/:path*", "/dashboard", "/dashboard/:path*", "/billing", "/billing/:path*", "/tax", "/tax/:path*", "/api/:path*"],
+  matcher: ["/login", "/login/:path*", "/dashboard-financeiro", "/dashboard-financeiro/:path*", "/clients", "/clients/:path*", "/empresas", "/empresas/:path*", "/clientes", "/clientes/:path*", "/dashboard", "/dashboard/:path*", "/billing", "/billing/:path*", "/tax", "/tax/:path*", "/api/:path*"],
 };
 

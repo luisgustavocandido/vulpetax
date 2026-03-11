@@ -44,6 +44,7 @@ export const BUSINESS_TYPES = [
   "Offices of other Holding companies",
   "Online Retail",
   "Online Services",
+  "Other Activities Related to Real Estate",
   "Other Management Consulting Services",
   "Performing Art Company",
   "Professional and management development training",
